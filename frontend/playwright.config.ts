@@ -17,7 +17,7 @@ export default defineConfig({
       env: {
         DATABASE_URL: process.env.E2E_DATABASE_URL ?? 'postgresql+psycopg:///homemanager_e2e',
         LLM_FAKE: '1',
-        JWT_SECRET: 'e2e-secret',
+        JWT_SECRET: 'e2e-secret-at-least-32-bytes-long!!',
       },
       reuseExistingServer,
     },

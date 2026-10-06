@@ -63,7 +63,7 @@ test('change password, then log in with the new one', async ({ page }) => {
   await page.goto('/account')
   await page.getByRole('button', { name: 'Change password' }).click()
   await page.getByLabel('Current password').fill('first-password')
-  await page.getByLabel('New password').fill('second-password')
+  await page.getByLabel('New password', { exact: true }).fill('second-password')
   await page.getByLabel('Confirm new password').fill('second-password')
   await page.getByRole('button', { name: 'Update password' }).click()
   await expect(page.getByRole('button', { name: 'Change password' })).toBeVisible()

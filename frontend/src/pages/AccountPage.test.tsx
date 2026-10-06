@@ -29,7 +29,9 @@ async function fillPassword(current: string, next: string, confirm: string) {
 }
 
 describe('AccountPage', () => {
-  beforeEach(() => vi.mocked(api).mockReset())
+  beforeEach(() => {
+    vi.mocked(api).mockReset()
+  })
 
   it('shows the profile with a masked password', async () => {
     setup()
