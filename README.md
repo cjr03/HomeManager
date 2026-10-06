@@ -19,7 +19,9 @@ Environment (defaults in parentheses):
 
 - `DATABASE_URL` (`postgresql+psycopg:///homemanager`)
 - `TEST_DATABASE_URL` (`postgresql+psycopg:///homemanager_test`), `E2E_DATABASE_URL` (`postgresql+psycopg:///homemanager_e2e`)
-- `JWT_SECRET`, `ANTHROPIC_API_KEY`; `LLM_FAKE=1` returns canned agent output
+- `JWT_SECRET` (signs session cookies; falls back to a hard-coded dev secret when unset, so always set it outside local dev)
+- `COOKIE_SECURE=1` marks the session cookie `Secure` (set it when served over HTTPS)
+- `ANTHROPIC_API_KEY`; `LLM_FAKE=1` returns canned agent output
 
 ## Run
 
