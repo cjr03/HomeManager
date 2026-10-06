@@ -1,18 +1,17 @@
 import { Check, ImageUp, Trash2, UserPlus, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { Field, FormError } from '@/components/Field'
+import { errorText, Field, FormError } from '@/components/Field'
 import { HouseholdInput, PreferencesFields } from '@/components/ProfileFields'
 import { UserAvatar } from '@/components/UserAvatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useAuth, useUser } from '@/lib/auth'
 
 const MAX_AVATAR_BYTES = 1024 * 1024
-const errorText = (err: unknown) => (err instanceof ApiError ? err.detail : 'Something went wrong, try again')
 
 function SectionTitle({ children, description }: { children: ReactNode; description: string }) {
   return (

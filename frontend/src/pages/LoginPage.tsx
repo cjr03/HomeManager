@@ -1,7 +1,7 @@
 import { Check, House } from 'lucide-react'
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { Navigate } from 'react-router'
-import { Field, FormError } from '@/components/Field'
+import { errorText, Field, FormError } from '@/components/Field'
 import { DEFAULT_PREFERENCES, HouseholdInput, PreferencesFields } from '@/components/ProfileFields'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -22,7 +22,6 @@ export function validateAccount(a: Account): Errors {
   return e
 }
 
-const errorText = (err: unknown) => (err instanceof ApiError ? err.detail : 'Something went wrong, try again')
 
 function LoginForm() {
   const { refresh } = useAuth()
