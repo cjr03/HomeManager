@@ -36,11 +36,6 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
 }
 
 /*
@@ -69,11 +64,6 @@
   --border: #dce4dd;
   --input: #d2dcd4;
   --ring: #2e6a55;
-  --chart-1: #2e6a55;
-  --chart-2: #f2b63f;
-  --chart-3: #6b8fb8;
-  --chart-4: #b5657a;
-  --chart-5: #8aa66b;
   --float-shadow: 0 1px 2px rgb(29 42 37 / 0.05), 0 14px 36px -14px rgb(29 62 50 / 0.22);
   --page-wash:
     radial-gradient(60rem 40rem at 0% -10%, rgb(46 106 85 / 0.12), transparent 60%),
@@ -103,11 +93,6 @@
     --border: rgb(255 255 255 / 0.08);
     --input: rgb(255 255 255 / 0.14);
     --ring: #7cc6a8;
-    --chart-1: #7cc6a8;
-    --chart-2: #e9b04a;
-    --chart-3: #8fb0d6;
-    --chart-4: #d68c9f;
-    --chart-5: #a9c48a;
     --float-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 18px 40px -16px rgb(0 0 0 / 0.6);
     --page-wash:
       radial-gradient(60rem 40rem at 0% -10%, rgb(124 198 168 / 0.10), transparent 60%),
