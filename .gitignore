@@ -1,0 +1,12 @@
+.remember/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+node_modules/
+dist/
+.env
+playwright-report/
+test-results/
+.gitnexus/
