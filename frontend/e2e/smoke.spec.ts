@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test'
 
+test.beforeEach(async ({ page }) => {
+  // page.request shares the browser context's cookies, so this signs the page in.
+  const username = `smoke_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`
+  const res = await page.request.post('/api/auth/signup', {
+    data: { email: `${username}@example.com`, username, password: 'smoke-pass', password_confirm: 'smoke-pass' },
+  })
+  expect(res.status()).toBe(201)
+})
+
 test('app loads with the brand and reaches the API through the proxy', async ({ page, request }) => {
   await page.goto('/')
   await expect(page.getByText('HomeManager').first()).toBeVisible()

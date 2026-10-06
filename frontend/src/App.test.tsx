@@ -1,21 +1,17 @@
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
-import App from './App'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { api } from '@/lib/api'
+import { USER, mockApi, renderAt, unauthorized } from '@/test-utils'
 
-function renderAt(path: string) {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <App />
-    </MemoryRouter>,
-  )
-}
+vi.mock('@/lib/api', async (orig) => ({ ...(await orig<typeof import('@/lib/api')>()), api: vi.fn() }))
 
-describe('App routes and shell', () => {
-  it('redirects / to the meals page inside the shell', () => {
+describe('App routes and shell (signed in)', () => {
+  beforeEach(() => mockApi({ 'GET /api/me': USER }))
+
+  it('redirects / to the meals page inside the shell', async () => {
     renderAt('/')
-    expect(screen.getByRole('heading', { level: 1, name: 'Meals' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Meals' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Meals' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('HomeManager')).toBeInTheDocument()
   })
@@ -24,26 +20,41 @@ describe('App routes and shell', () => {
     ['/meals', 'Meals'],
     ['/budget', 'Budget'],
     ['/calendar', 'Calendar'],
-  ])('%s renders a monthly page with month navigation', (path, title) => {
+  ])('%s renders a monthly page with month navigation', async (path, title) => {
     renderAt(path)
-    expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: title })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument()
   })
 
-  it('renders the account page', () => {
+  it('renders the account page', async () => {
     renderAt('/account')
-    expect(screen.getByRole('heading', { level: 1, name: 'Account' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Account' })).toBeInTheDocument()
   })
 
-  it('renders the login page without the app navigation', () => {
+  it('redirects /login to meals when already signed in', async () => {
     renderAt('/login')
-    expect(screen.getByRole('heading', { level: 1, name: /welcome/i })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Budget' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Meals' })).toBeInTheDocument()
+  })
+
+  it('shows the signed-in user and logs out to the login page', async () => {
+    let me: unknown = USER
+    mockApi({
+      'GET /api/me': () => me ?? unauthorized(),
+      'POST /api/auth/logout': () => {
+        me = null
+      },
+    })
+    renderAt('/meals')
+    const menu = await screen.findByLabelText('Signed in as ann')
+    expect(menu).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Log out' }))
+    expect(api).toHaveBeenCalledWith('/api/auth/logout', { method: 'POST' })
+    expect(await screen.findByRole('heading', { level: 1, name: /welcome/i })).toBeInTheDocument()
   })
 
   it('navigates between pages and moves the active state', async () => {
     renderAt('/meals')
-    await userEvent.click(screen.getByRole('link', { name: 'Budget' }))
+    await userEvent.click(await screen.findByRole('link', { name: 'Budget' }))
     expect(screen.getByRole('heading', { level: 1, name: 'Budget' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Budget' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Meals' })).not.toHaveAttribute('aria-current')
@@ -51,8 +62,18 @@ describe('App routes and shell', () => {
 
   it('page month navigation changes the displayed month', async () => {
     renderAt('/calendar')
-    const before = screen.getByRole('heading', { level: 2 }).textContent
+    const before = (await screen.findByRole('heading', { level: 2 })).textContent
     await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
     expect(screen.getByRole('heading', { level: 2 }).textContent).not.toBe(before)
+  })
+})
+
+describe('App routes (signed out)', () => {
+  beforeEach(() => mockApi({ 'GET /api/me': unauthorized }))
+
+  it.each(['/', '/meals', '/account'])('%s redirects to the login page', async (path) => {
+    renderAt(path)
+    expect(await screen.findByRole('heading', { level: 1, name: /welcome/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Budget' })).not.toBeInTheDocument()
   })
 })
