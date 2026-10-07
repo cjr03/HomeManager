@@ -137,7 +137,7 @@ def test_shopping_list_request():
 def test_generate_meals_request():
     out = WeekMeals(days=[])
     client = FakeClient(out)
-    prefs = Preferences(diet="vegetarian", allergies=["peanuts"], dislikes="olives")
+    prefs = [Preferences(diet="vegetarian", allergies=["peanuts"], dislikes="olives"), Preferences(diet="keto")]
     assert generate_meals(HAVE, prefs, 2, [Slot.dinner], client=client) is out
     (call,) = client.calls
     assert call["system"] == agents.MEAL_GENERATOR_PROMPT
@@ -146,9 +146,9 @@ def test_generate_meals_request():
     assert payload["household_size"] == 2
     assert payload["slots"] == ["dinner"]
     assert payload["have"] == [{"name": "Milk", "quantity": 1, "unit": "l"}]
-    assert payload["preferences"]["diet"] == "vegetarian"
-    assert payload["preferences"]["allergies"] == ["peanuts"]
-    assert payload["preferences"]["dislikes"] == "olives"
+    first, second = payload["preferences"]  # one entry per household member
+    assert first["diet"] == "vegetarian" and first["allergies"] == ["peanuts"] and first["dislikes"] == "olives"
+    assert second["diet"] == "keto"
 
 
 def test_user_text_cannot_close_the_data_block():
@@ -245,7 +245,7 @@ def test_fake_shopping_list_subtracts_what_is_on_hand(fake_mode):
 
 @pytest.mark.parametrize("slots", [[Slot.dinner], [Slot.breakfast, Slot.snack], list(Slot)])
 def test_fake_generate_meals_only_requested_slots(fake_mode, slots):
-    week = generate_meals([], Preferences(), 3, slots)
+    week = generate_meals([], [Preferences()], 3, slots)
     assert isinstance(week, WeekMeals)
     assert [d.weekday for d in week.days] == WEEKDAYS
     for day in week.days:

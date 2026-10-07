@@ -14,6 +14,7 @@ from app.agents import (
     Slot,
     WeekMeals,
 )
+from app.accounts import Link
 from app.main import app
 from app.meals import MealEntry, day_plans, get_agents, pantry_remainder, week_dates
 
@@ -66,6 +67,15 @@ def fake():
 
 def put_meal(c, day, slot, **body):
     return c.put(f"/api/meals/{day}/{slot}", json={"name": "Soup", **body})
+
+
+def link(db, a, b, status="accepted"):
+    db.add(Link(requester_id=a.id, addressee_id=b.id, status=status))
+    db.flush()
+
+
+def names(c):
+    return [m["name"] for m in c.get("/api/meals?month=2026-10").json()]
 
 
 # ---- unit ----
@@ -332,7 +342,7 @@ def test_generate_saves_week_with_preferences(auth_client, fake, db):
     assert {(m["date"], m["name"]) for m in saved} >= {("2026-10-05", "Monday dinner"), ("2026-10-10", "Saturday lunch")}
     have, prefs, size, slots = fake.calls["generate_meals"]
     assert have == [GroceryItem(name="Rice", quantity=1, unit="kg")]
-    assert prefs.diet == "vegan" and size == 2 and slots == [Slot.dinner, Slot.lunch]
+    assert [p.diet for p in prefs] == ["vegan"] and size == 2 and slots == [Slot.dinner, Slot.lunch]
     assert len(auth_client.get("/api/meals?month=2026-10").json()) == 14
 
 
@@ -389,3 +399,92 @@ def test_default_agents_dependency_is_the_agents_module():
     from app import agents
 
     assert get_agents() is agents
+
+
+# ---- linked accounts share one plan ----
+
+
+def test_linked_users_share_one_meal_plan(make_user, client_for, db):
+    ann, bob, cat = make_user(), make_user(), make_user()
+    put_meal(client_for(bob), SUNDAY, "lunch", name="Bob's lunch")
+    put_meal(client_for(bob), SUNDAY, "dinner", name="Bob's dinner")
+    put_meal(client_for(ann), SUNDAY, "dinner", name="Ann's dinner")
+    link(db, bob, ann)
+    link(db, ann, cat, "pending")
+    a, b, c = client_for(ann), client_for(bob), client_for(cat)
+    assert names(a) == names(b) == ["Bob's lunch", "Ann's dinner"]  # merged; the latest row wins a clash
+    put_meal(a, SUNDAY, "dinner", name="Ann's pick")
+    assert names(b) == ["Bob's lunch", "Ann's pick"]
+    assert names(c) == []  # pending link
+    assert b.delete(f"/api/meals/{SUNDAY}/dinner").status_code == 204
+    assert names(a) == ["Bob's lunch"]
+    put_meal(a, SUNDAY, "snack", name="Ann's snack")
+    db.query(Link).delete()
+    db.flush()
+    assert names(a) == ["Ann's snack"]  # unlinking leaves each with the meals they wrote
+    assert names(b) == ["Bob's lunch"]
+
+
+def test_sharing_follows_direct_links_only(make_user, client_for, db):
+    ann, bob, cat = make_user(), make_user(), make_user()
+    link(db, ann, bob)
+    link(db, cat, bob)
+    put_meal(client_for(cat), SUNDAY, "dinner", name="Cat's pick")
+    put_meal(client_for(ann), SUNDAY, "lunch", name="Ann's pick")
+    assert names(client_for(bob)) == ["Ann's pick", "Cat's pick"]
+    assert names(client_for(ann)) == ["Ann's pick"]
+    assert names(client_for(cat)) == ["Cat's pick"]
+
+
+def test_linked_users_share_the_pantry(make_user, client_for, db):
+    ann, bob, dan = make_user(), make_user(), make_user()
+    client_for(ann).put("/api/pantry", json={"items": [{"name": "Eggs", "quantity": 6.0, "unit": ""}]})
+    link(db, ann, bob)
+    a, b = client_for(ann), client_for(bob)
+    milk = [{"name": "Milk", "quantity": 1.0, "unit": "l"}]
+    assert b.get("/api/pantry").json() == {"items": [{"name": "Eggs", "quantity": 6.0, "unit": ""}]}
+    b.put("/api/pantry", json={"items": milk})  # replaces the whole shared pantry
+    assert a.get("/api/pantry").json() == b.get("/api/pantry").json() == {"items": milk}
+    assert client_for(dan).get("/api/pantry").json() == {"items": []}
+
+
+def test_generate_uses_every_members_preferences(make_user, client_for, db, fake):
+    ann = make_user(household_size=1, preferences={"diet": "vegan"})
+    bob = make_user(household_size=3, preferences={"allergies": ["peanuts"]})
+    link(db, ann, bob)
+    client_for(ann).put("/api/pantry", json={"items": [{"name": "Rice", "quantity": 1, "unit": "kg"}]})
+    put_meal(client_for(ann), SUNDAY, "dinner", name="Kept")
+    r = client_for(bob).post("/api/meals/generate", json={"week_start": SUNDAY, "slots": ["dinner"]})
+    assert r.status_code == 200 and len(r.json()) == 6
+    have, prefs, size, _ = fake.calls["generate_meals"]
+    assert have == [GroceryItem(name="Rice", quantity=1, unit="kg")]
+    assert [(p.diet, p.allergies) for p in prefs] == [("vegan", []), ("none", ["peanuts"])]
+    assert size == 3
+    assert len(names(client_for(ann))) == 7 and "Kept" in names(client_for(ann))
+
+
+def test_shopping_list_uses_household_size_and_pantry(make_user, client_for, db, fake):
+    ann, bob = make_user(), make_user()  # both default to household_size 1
+    link(db, ann, bob)
+    put_meal(client_for(ann), SUNDAY, "dinner")
+    client_for(ann).put("/api/pantry", json={"items": [{"name": "Rice", "quantity": 1, "unit": "kg"}]})
+    b = client_for(bob)
+    b.post("/api/meals/shopping-list", json={"week_start": SUNDAY})
+    assert fake.calls["groceries_needed"][1] == 2  # at least one serving per member
+    assert fake.calls["shopping_list"][1] == [GroceryItem(name="Rice", quantity=1, unit="kg")]
+    ann.household_size = 4
+    db.flush()
+    b.post("/api/meals/shopping-list", json={"week_start": SUNDAY})
+    assert fake.calls["groceries_needed"][1] == 4  # the partner's size counts too
+
+
+def test_generate_pantry_settles_the_shared_pantry(make_user, client_for, db, fake):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    put_meal(client_for(ann), SUNDAY, "dinner")
+    client_for(ann).put("/api/pantry", json={"items": [{"name": "Spaghetti", "quantity": 300, "unit": "g"}]})
+    r = client_for(bob).post("/api/pantry/generate", json={"week_start": SUNDAY})
+    expected = {"items": [{"name": "Spaghetti", "quantity": 50.0, "unit": "g"}]}
+    assert r.status_code == 200 and r.json() == expected
+    assert client_for(ann).get("/api/pantry").json() == expected
+    assert fake.calls["groceries_needed"][1] == 2
