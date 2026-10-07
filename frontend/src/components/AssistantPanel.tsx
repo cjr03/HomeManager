@@ -212,7 +212,7 @@ export function AssistantPanel() {
             className="space-y-2 px-4"
           >
             <FormError>{error}</FormError>
-            <div className="flex items-end gap-2">
+            <div className="flex items-start gap-2">
               {recognizer() && (
                 <Button
                   type="button"
