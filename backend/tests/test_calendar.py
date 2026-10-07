@@ -217,7 +217,7 @@ def test_chore_crud_and_list(pair):
     ch = r.json()
     assert ch | {"id": 0} == {
         "id": 0, "owner_id": ann.id, "title": "Bins", "notes": "", "start_date": "2026-03-02",
-        "recurrence": "weekly", "end_date": None,
+        "recurrence": "weekly", "end_date": None, "shared": False,
         "assignee": {"id": bob.id, "username": "bob", "avatar": None},
     }
     assert [c["id"] for c in ca.get("/api/chores").json()] == [ch["id"]]
@@ -348,3 +348,27 @@ def test_unlinking_hides_chores_from_the_former_partner(pair, db):
     body = {"title": "Bins!", "assignee_id": bob.id, "start_date": "2026-03-02", "recurrence": "weekly"}
     assert ca.put(f"/api/chores/{cid}", json=body).status_code == 200  # owner can still edit
     assert chore(ca, bob.id).status_code == 400  # but can't assign new chores to them
+
+
+def test_shared_chore_visible_to_linked_accounts_only(pair, make_user, client_for, db):
+    """A shared chore shows up for every linked account, who can tick it off but not edit it."""
+    ann, bob, ca, cb = pair
+    cid = chore(ca, ann.id, shared=True).json()["id"]
+    chore(ca, ann.id, title="Private")
+    assert [c["id"] for c in cb.get("/api/chores").json()] == [cid]
+    assert cb.get("/api/chores").json()[0]["shared"] is True
+    assert {c["chore_id"] for c in cb.get("/api/calendar/2026-03").json()["chores"]} == {cid}
+    assert cb.get("/api/chores/today?date=2026-03-02").json() == []  # shared, not assigned
+    assert cb.post(f"/api/chores/{cid}/done/2026-03-02").status_code == 204
+    body = {"title": "x", "assignee_id": ann.id, "start_date": "2026-03-02", "recurrence": "none"}
+    assert cb.put(f"/api/chores/{cid}", json=body).status_code == 404
+    assert cb.delete(f"/api/chores/{cid}").status_code == 404
+
+    eve_user = make_user("eve")
+    link(db, ann, eve_user, "pending")
+    eve = client_for(eve_user)
+    assert eve.get("/api/chores").json() == []
+    assert eve.post(f"/api/chores/{cid}/done/2026-03-09").status_code == 404
+
+    ca.put(f"/api/chores/{cid}", json=body | {"shared": False})
+    assert cb.get("/api/chores").json() == []

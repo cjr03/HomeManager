@@ -37,6 +37,7 @@ class Chore(Base):
     start_date: Mapped[date]
     recurrence: Mapped[Recurrence] = mapped_column(String(10))
     end_date: Mapped[date | None]
+    shared: Mapped[bool] = mapped_column(default=False)
     assignee: Mapped[User] = relationship(foreign_keys=[assignee_id], lazy="joined")
 
 
@@ -97,6 +98,7 @@ class ChoreIn(BaseModel):
     recurrence: Recurrence
     end_date: date | None = None
     notes: str = ""
+    shared: bool = False
 
     @model_validator(mode="after")
     def _end_after_start(self):
@@ -121,6 +123,7 @@ class ChoreOut(BaseModel):
     start_date: date
     recurrence: Recurrence
     end_date: date | None
+    shared: bool
     assignee: Person
 
 
@@ -152,7 +155,7 @@ def _visible_chore(db: Session, chore_id: int, user: User, *, owner_only: bool =
     ch = db.get(Chore, chore_id)
     visible = ch is not None and (
         ch.owner_id == user.id
-        or (not owner_only and ch.assignee_id == user.id and ch.owner_id in linked_user_ids(db, user))
+        or (not owner_only and (ch.assignee_id == user.id or ch.shared) and ch.owner_id in linked_user_ids(db, user))
     )
     if not visible:
         raise HTTPException(404, "Chore not found")
@@ -183,11 +186,11 @@ def _occurrences(db: Session, chores: list[Chore], start: date, end: date) -> li
 
 
 def _chores_of(db: Session, user: User, *, assigned_only: bool = False) -> list[Chore]:
-    """Chores I own or am assigned. Someone else's chore counts only while we're linked."""
-    owner_ok = or_(Chore.owner_id == user.id, Chore.owner_id.in_(linked_user_ids(db, user)))
-    who = and_(Chore.assignee_id == user.id, owner_ok)
+    """Chores I own, am assigned, or that are shared with me. Someone else's chore counts only while we're linked."""
+    linked = Chore.owner_id.in_(linked_user_ids(db, user))
+    who = and_(Chore.assignee_id == user.id, or_(Chore.owner_id == user.id, linked))
     if not assigned_only:
-        who = or_(who, Chore.owner_id == user.id)
+        who = or_(who, Chore.owner_id == user.id, and_(Chore.shared, linked))
     return list(db.scalars(select(Chore).where(who).order_by(Chore.id)))
 
 

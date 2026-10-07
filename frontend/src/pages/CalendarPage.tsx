@@ -27,6 +27,7 @@ type Chore = {
   start_date: string
   recurrence: Recurrence
   end_date: string | null
+  shared: boolean
   assignee: Person
 }
 
@@ -127,6 +128,20 @@ function DayCell({
 
 // ---- day dialog ----
 
+function ShareToggle({ checked, onChange }: { checked: boolean; onChange: (shared: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="size-4 accent-primary dark:scheme-dark"
+      />
+      Share with linked accounts
+    </label>
+  )
+}
+
 function EventForm({ event, day, onDone }: { event: CalEvent | null; day: string; onDone: (saved: boolean) => void }) {
   const [form, setForm] = useState({
     title: event?.title ?? '',
@@ -158,15 +173,7 @@ function EventForm({ event, day, onDone }: { event: CalEvent | null; day: string
         <Label htmlFor="event-notes">Notes</Label>
         <Textarea id="event-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
       </div>
-      <label className="flex cursor-pointer items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={form.shared}
-          onChange={(e) => setForm({ ...form, shared: e.target.checked })}
-          className="size-4 accent-primary dark:scheme-dark"
-        />
-        Share with linked accounts
-      </label>
+      <ShareToggle checked={form.shared} onChange={(shared) => setForm({ ...form, shared })} />
       <FormError>{error}</FormError>
       <div className="flex gap-2">
         <Button type="submit" className="rounded-full">
@@ -321,6 +328,7 @@ function ChoreForm({ chore, people, onDone }: { chore: Chore | null; people: Per
     recurrence: chore?.recurrence ?? ('none' as Recurrence),
     end_date: chore?.end_date ?? '',
     notes: chore?.notes ?? '',
+    shared: chore?.shared ?? false,
   })
   const [error, setError] = useState('')
   // Keep a since-unlinked assignee selectable so editing doesn't silently reassign.
@@ -389,6 +397,7 @@ function ChoreForm({ chore, people, onDone }: { chore: Chore | null; people: Per
         <Label htmlFor="chore-notes">Notes</Label>
         <Textarea id="chore-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
       </div>
+      <ShareToggle checked={form.shared} onChange={(shared) => setForm({ ...form, shared })} />
       <FormError>{error}</FormError>
       <div className="flex gap-2">
         <Button type="submit" className="rounded-full">
@@ -451,7 +460,12 @@ function ChoresCard({ chores, people, onChanged }: { chores: Chore[]; people: Pe
                 <p className="truncate text-xs text-muted-foreground">{describeChore(c)}</p>
               </div>
               {c.owner_id === me.id ? (
-                <div className="flex">
+                <div className="flex items-center">
+                  {c.shared && (
+                    <Badge variant="secondary" className="mr-1">
+                      <Users /> Shared
+                    </Badge>
+                  )}
                   <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label={`Edit ${c.title}`} onClick={() => setEditing(c)}>
                     <Pencil />
                   </Button>

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import text
 
 from app import accounts, auth, budget, calendar, meals
 from app.db import Base, engine
@@ -9,6 +10,9 @@ from app.db import Base, engine
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
+    # ponytail: hand-written column add until Alembic lands; create_all skips columns on existing tables.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE chores ADD COLUMN IF NOT EXISTS shared boolean NOT NULL DEFAULT false"))
     yield
 
 
