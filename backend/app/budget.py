@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-from sqlalchemy import ColumnElement, ForeignKey, Index, Numeric, String, and_, func, or_, select
+from sqlalchemy import ColumnElement, ForeignKey, Index, Numeric, SmallInteger, String, and_, func, or_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.accounts import linked_user_ids
@@ -24,6 +24,7 @@ class Kind(StrEnum):
     savings = "savings"  # a = budgeted, b = actual
 
 
+CENT = Decimal("0.01")
 BALANCES = {Kind.debit, Kind.credit}  # the only kinds whose amounts may be negative
 
 
@@ -32,8 +33,10 @@ class BudgetLine(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    # Set on lines shared by user_id and partner_id; either may edit them and each carries half.
+    # Set on lines shared by user_id and partner_id; either may edit them. Each carries their share (percent) of it.
     partner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    user_share: Mapped[int] = mapped_column(SmallInteger, default=50)
+    partner_share: Mapped[int] = mapped_column(SmallInteger, default=50)
     month: Mapped[str] = mapped_column(String(7))
     kind: Mapped[str] = mapped_column(String(8))
     name: Mapped[str] = mapped_column(String(100))
@@ -111,12 +114,15 @@ def summarize(lines: Iterable[BudgetLine]) -> BudgetSummary:
 
 Month = Annotated[str, Path(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")]
 Amount = Annotated[Decimal, Field(max_digits=12, decimal_places=2)]
+Share = Annotated[int, Field(ge=0, le=100)]
 
 
 class LineUpdate(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     a: Amount
     b: Amount | None = None
+    user_share: Share = 50
+    partner_share: Share = 50
 
 
 class LineIn(LineUpdate):
@@ -129,6 +135,8 @@ class LineOut(BaseModel):
     id: int
     owner_id: int = Field(validation_alias="user_id")
     partner_id: int | None
+    user_share: int
+    partner_share: int
     month: str
     kind: Kind
     name: str
@@ -150,14 +158,8 @@ class Member(BaseModel):
     avatar: str | None
 
 
-class MemberSummary(BaseModel):
-    user_id: int
-    summary: BudgetSummary
-
-
 class SharedOut(MonthOut):
     members: list[Member]
-    per_member: list[MemberSummary]
 
 
 # ---- routes ----
@@ -183,24 +185,25 @@ def _pair(a: int, b: int) -> ColumnElement[bool]:
     )
 
 
-def _half(line: BudgetLine) -> LineOut:
+def _my_share(line: BudgetLine, user: User) -> LineOut:
+    pct = line.user_share if line.user_id == user.id else line.partner_share
     out = LineOut.model_validate(line)
-    return out.model_copy(update={"a": out.a / 2, "b": None if out.b is None else out.b / 2})
+    scale = lambda v: (v * pct / 100).quantize(CENT)  # noqa: E731
+    return out.model_copy(update={"a": scale(out.a), "b": None if out.b is None else scale(out.b)})
 
 
 def _month_out(db: Session, user: User, month: str) -> MonthOut:
-    """Own lines plus half of each expense and savings line shared with a linked user."""
+    """Own lines plus the user's share of each line shared with a linked user."""
     partners = linked_user_ids(db, user)
     shared = _lines(
         db,
         month,
-        BudgetLine.kind.in_([Kind.expense, Kind.savings]),
         or_(
             and_(BudgetLine.user_id == user.id, BudgetLine.partner_id.in_(partners)),
             and_(BudgetLine.partner_id == user.id, BudgetLine.user_id.in_(partners)),
         ),
     )
-    lines = [LineOut.model_validate(x) for x in _lines(db, month, _personal(user.id))] + [_half(x) for x in shared]
+    lines = [LineOut.model_validate(x) for x in _lines(db, month, _personal(user.id))] + [_my_share(x, user) for x in shared]
     return MonthOut(lines=lines, summary=summarize(lines))
 
 
@@ -211,16 +214,9 @@ def _partner(db: Session, user: User, other_user_id: int) -> User:
 
 
 def _shared_out(db: Session, user: User, other: User, month: str) -> SharedOut:
-    """Only the lines the pair shares; each member carries half of them."""
-    members = [user, other]
+    """Only the lines the pair shares, at full value."""
     lines = _lines(db, month, _pair(user.id, other.id))
-    half = summarize([_half(x) for x in lines])
-    return SharedOut(
-        members=members,
-        lines=lines,
-        summary=summarize(lines),
-        per_member=[MemberSummary(user_id=m.id, summary=half) for m in members],
-    )
+    return SharedOut(members=[user, other], lines=lines, summary=summarize(lines))
 
 
 def _own_line(db: Session, line_id: int, user: User) -> BudgetLine:
@@ -248,7 +244,8 @@ def _carry_over(s: BudgetLine, month: str) -> BudgetLine:
     elif s.kind != Kind.income:
         b = None
     return BudgetLine(
-        user_id=s.user_id, partner_id=s.partner_id, month=month, kind=s.kind, name=s.name, a=a, b=b, position=s.position
+        user_id=s.user_id, partner_id=s.partner_id, user_share=s.user_share, partner_share=s.partner_share,
+        month=month, kind=s.kind, name=s.name, a=a, b=b, position=s.position,
     )
 
 
@@ -288,7 +285,8 @@ def create_line(month: Month, body: LineIn, user: CurrentUser, db: DB):
 def update_line(line_id: int, body: LineUpdate, user: CurrentUser, db: DB):
     line = _own_line(db, line_id, user)
     _check_amounts(line.kind, body)
-    line.name, line.a, line.b = body.name, body.a, body.b
+    for k, v in body.model_dump().items():
+        setattr(line, k, v)
     db.commit()
     return line
 

@@ -24,7 +24,7 @@ const SUMMARY = {
   net_worth: '12345.67',
 }
 const line = (id: number, kind: string, name: string, a: string, b: string | null, owner_id = 1, partner_id: number | null = null) => ({
-  id, owner_id, partner_id, month: M, kind, name, a, b, position: id,
+  id, owner_id, partner_id, user_share: 50, partner_share: 50, month: M, kind, name, a, b, position: id,
 })
 const MINE = {
   lines: [line(1, 'income', 'Salary', '5000.00', '3800.00'), line(2, 'expense', 'Rent', '1500.00', '1400.00')],
@@ -134,7 +134,7 @@ describe('BudgetPage', () => {
     expect(await screen.findByText('Last month has nothing to copy')).toBeInTheDocument()
   })
 
-  it('switches to the shared view with per-member contributions', async () => {
+  it('switches to the shared view without a contributions card', async () => {
     setup({
       'GET /api/links': { ...NO_LINKS, linked: [{ id: 9, user_id: 2, username: 'bob', avatar: null }] },
       [`GET /api/budget/${M}`]: MINE,
@@ -142,10 +142,6 @@ describe('BudgetPage', () => {
         members: [{ id: 1, username: 'ann', avatar: null }, BOB],
         lines: [line(4, 'expense', 'Groceries', '600.00', null, 2, 1)],
         summary: { ...SUMMARY, net_worth: '20000.00' },
-        per_member: [
-          { user_id: 1, summary: SUMMARY },
-          { user_id: 2, summary: { ...EMPTY_SUMMARY, net_worth: '7654.33' } },
-        ],
       },
     })
     await userEvent.click(await screen.findByRole('tab', { name: 'Shared with bob' }))
@@ -153,9 +149,7 @@ describe('BudgetPage', () => {
     expect(await o.findByText('$20,000.00')).toBeInTheDocument()
     expect(screen.queryByRole('listitem', { name: 'Rent' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Groceries' })).toBeInTheDocument()
-    const contrib = within(screen.getByRole('region', { name: 'Contributions' }))
-    expect(contrib.getByText('$7,654.33')).toBeInTheDocument()
-    expect(contrib.getByText('$12,345.67')).toBeInTheDocument()
+    expect(screen.queryByText('Who brings what')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('tab', { name: 'Mine' }))
     expect(await o.findByText('$12,345.67')).toBeInTheDocument()
@@ -166,7 +160,6 @@ describe('BudgetPage', () => {
       members: [{ id: 1, username: 'ann', avatar: null }, BOB],
       lines: [line(4, 'expense', 'Groceries', '600.00', null, 2, 1)],
       summary: SUMMARY,
-      per_member: [{ user_id: 1, summary: SUMMARY }, { user_id: 2, summary: SUMMARY }],
     }
     setup({
       'GET /api/links': { ...NO_LINKS, linked: [{ id: 9, user_id: 2, username: 'bob', avatar: null }] },
@@ -180,16 +173,18 @@ describe('BudgetPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Add loan' }))
     await userEvent.type(screen.getByLabelText('Name'), 'Mortgage')
     await userEvent.type(screen.getByLabelText('Amount owed'), '200000')
+    await userEvent.clear(screen.getByLabelText('Your share %'))
+    await userEvent.type(screen.getByLabelText('Your share %'), '100')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(api).toHaveBeenCalledWith(`/api/budget/${M}/shared/2/lines`, {
-      method: 'POST', json: { kind: 'loan', name: 'Mortgage', a: '200000', b: null },
+      method: 'POST', json: { kind: 'loan', name: 'Mortgage', a: '200000', b: null, user_share: 100, partner_share: 50 },
     })
     await userEvent.click(screen.getByRole('button', { name: 'Delete Groceries' }))
     expect(api).toHaveBeenCalledWith('/api/budget/lines/4', { method: 'DELETE' })
   })
 
   it('offers to copy last month into an empty shared month', async () => {
-    const empty = { members: [{ id: 1, username: 'ann', avatar: null }, BOB], lines: [], summary: SUMMARY, per_member: [1, 2].map((user_id) => ({ user_id, summary: SUMMARY })) }
+    const empty = { members: [{ id: 1, username: 'ann', avatar: null }, BOB], lines: [], summary: SUMMARY }
     setup({
       'GET /api/links': { ...NO_LINKS, linked: [{ id: 9, user_id: 2, username: 'bob', avatar: null }] },
       [`GET /api/budget/${M}`]: MINE,

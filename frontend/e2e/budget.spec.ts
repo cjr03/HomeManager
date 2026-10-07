@@ -61,7 +61,7 @@ test('budget a month, watch the overview update, then copy it into next month', 
   await expect(page.getByRole('listitem', { name: 'Car' })).toBeHidden()
 })
 
-test('linked users share a budget and each carry half of shared expenses', async ({ browser }) => {
+test('linked users share a budget, split each line, and see their share at home', async ({ browser }) => {
   const a = await newUser(browser, unique('ann'))
   const b = await newUser(browser, unique('ben'))
   expect((await a.page.request.post('/api/links', { data: { username: b.username } })).status()).toBe(201)
@@ -80,7 +80,7 @@ test('linked users share a budget and each carry half of shared expenses', async
   await expect(a.page.getByRole('listitem', { name: 'Ben pay' })).toBeHidden()
 
   await a.page.getByRole('tab', { name: `Shared with ${b.username}` }).click()
-  await expect(a.page.getByRole('region', { name: 'Contributions' })).toContainText(b.username)
+  await expect(a.page.getByText('Who brings what')).toBeHidden()
   await expect(a.page.getByText(`Nothing shared for`)).toBeVisible()
   await expect(a.page.getByRole('listitem', { name: 'Ann pay' })).toBeHidden()
   await expect(a.page.getByRole('listitem', { name: 'Ben pay' })).toBeHidden()
@@ -88,13 +88,16 @@ test('linked users share a budget and each carry half of shared expenses', async
   await a.page.getByRole('button', { name: 'Add expense' }).click()
   await a.page.getByLabel('Name').fill('Rent')
   await a.page.getByLabel('Budgeted').fill('2000')
+  await a.page.getByLabel('Your share %').fill('25')
+  await a.page.getByLabel(`${b.username}'s share %`).fill('75')
   await a.page.getByRole('button', { name: 'Save' }).click()
+  await expect(a.page.getByRole('listitem', { name: 'Rent' })).toContainText('25/75 split')
   await expect(a.page.getByRole('button', { name: 'Edit Rent' })).toBeVisible()
   await expect(a.page.getByRole('region', { name: 'Overview' })).toContainText('$2,000.00')
 
   await b.page.goto('/budget')
   const rent = b.page.getByRole('listitem', { name: 'Rent' })
-  await expect(rent).toContainText('½ shared')
-  await expect(rent).toContainText('$1,000.00')
+  await expect(rent).toContainText('Shared')
+  await expect(rent).toContainText('$1,500.00')
   await expect(b.page.getByRole('button', { name: 'Edit Rent' })).toBeHidden()
 })

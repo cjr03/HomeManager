@@ -19,7 +19,7 @@ const SUMMARY: Summary = {
 }
 
 const line = (id: number, kind: Line['kind'], name: string, a: string, b: string | null = null, owner_id = 1): Line => ({
-  id, owner_id, partner_id: null, month: '2026-10', kind, name, a, b, position: id,
+  id, owner_id, partner_id: null, user_share: 50, partner_share: 50, month: '2026-10', kind, name, a, b, position: id,
 })
 
 const EXPENSES = [line(1, 'expense', 'Rent', '1500.00', '1500.00'), line(2, 'expense', 'Food', '400.00', '500.00')]
@@ -118,18 +118,48 @@ describe('BudgetCard', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('in the shared view, edits shared lines without the half badge', () => {
-    const lines = EXPENSES.map((l) => ({ ...l, partner_id: 2 }))
-    render(<BudgetCard kind="expense" lines={lines} summary={SUMMARY} shared onAdd={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Add expense' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit Food' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit Rent' })).toBeInTheDocument()
-    expect(screen.queryByText('½ shared')).not.toBeInTheDocument()
+  describe('shared view', () => {
+    const members = [{ id: 1, username: 'ann', avatar: null }, { id: 2, username: 'bob', avatar: null }]
+    // Rent is ann's (me) at 70/30; Food is bob's, giving ann 100 and bob 100.
+    const lines = [{ ...EXPENSES[0], partner_id: 2, user_share: 70, partner_share: 30 }, { ...EXPENSES[1], owner_id: 2, partner_id: 1, user_share: 100, partner_share: 100 }]
+    const renderShared = () => {
+      const handlers = { onAdd: vi.fn(), onUpdate: vi.fn(), onDelete: vi.fn() }
+      render(<BudgetCard kind="expense" lines={lines} summary={SUMMARY} members={members} {...handlers} />)
+      return handlers
+    }
+
+    it('shows each split from my side', () => {
+      renderShared()
+      expect(within(screen.getByRole('listitem', { name: 'Rent' })).getByText('70/30 split')).toBeInTheDocument()
+      expect(within(screen.getByRole('listitem', { name: 'Food' })).getByText('100/100 split')).toBeInTheDocument()
+    })
+
+    it('adds a line with a split, 50/50 by default', async () => {
+      const { onAdd } = renderShared()
+      await userEvent.click(screen.getByRole('button', { name: 'Add expense' }))
+      expect(screen.getByLabelText('Your share %')).toHaveValue(50)
+      await userEvent.type(screen.getByLabelText('Name'), 'Gas')
+      await userEvent.type(screen.getByLabelText('Budgeted'), '80')
+      await userEvent.clear(screen.getByLabelText("bob's share %"))
+      await userEvent.type(screen.getByLabelText("bob's share %"), '100')
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      expect(onAdd).toHaveBeenCalledWith({ name: 'Gas', a: '80', b: null, user_share: 50, partner_share: 100 })
+    })
+
+    it("maps my split back onto the owner's side when editing someone else's line", async () => {
+      const { onUpdate } = renderShared()
+      await userEvent.click(screen.getByRole('button', { name: 'Edit Food' }))
+      await userEvent.clear(screen.getByLabelText('Your share %'))
+      await userEvent.type(screen.getByLabelText('Your share %'), '25')
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      expect(onUpdate).toHaveBeenCalledWith(2, expect.objectContaining({ user_share: 100, partner_share: 25 }))
+    })
   })
 
-  it('marks your half of a shared line as read-only in the personal view', () => {
+  it('marks your share of a shared line as read-only in the personal view', () => {
     renderCard({ lines: [EXPENSES[0], { ...EXPENSES[1], partner_id: 2 }] })
-    expect(within(screen.getByRole('listitem', { name: 'Food' })).getByText('½ shared')).toBeInTheDocument()
+    expect(within(screen.getByRole('listitem', { name: 'Food' })).getByText('Shared')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Your share %')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit Food' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit Rent' })).toBeInTheDocument()
   })
