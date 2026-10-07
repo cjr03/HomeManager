@@ -330,11 +330,13 @@ function ShoppingListCard({ items, done, onToggle }: { items: ShoppingItem[]; do
 }
 
 export function MealsPage() {
-  // Month and week live in the URL so a reload reopens the same week and its shopping list.
-  const [params, setParams] = useSearchParams()
-  const month = params.get('month') ?? currentMonth()
-  const week = params.get('week') ?? weekStart(today())
-  const show = (m: string, w: string) => setParams({ month: m, week: w }, { replace: true })
+  // Month and week are mirrored into the URL so a reload reopens the same week and its shopping list.
+  // Plain state, not setSearchParams: the router applies navigations in a transition, so a quick
+  // second click could act on the previous month's grid.
+  const [params] = useSearchParams()
+  const [month, setMonth] = useState(() => params.get('month') ?? currentMonth())
+  const [week, setWeek] = useState(() => params.get('week') ?? weekStart(today()))
+  useEffect(() => history.replaceState(history.state, '', `?month=${month}&week=${week}`), [month, week])
   const [meals, setMeals] = useState<Meal[]>([])
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -377,7 +379,8 @@ export function MealsPage() {
   for (const m of meals) byDay.set(m.date, { ...byDay.get(m.date), [m.slot]: m })
 
   function changeMonth(m: string) {
-    show(m, weekStart(m === currentMonth() ? today() : `${m}-01`))
+    setMonth(m)
+    setWeek(weekStart(m === currentMonth() ? today() : `${m}-01`))
   }
 
   async function run(agent: Agent, call: () => Promise<void>) {
@@ -435,7 +438,7 @@ export function MealsPage() {
     // Phones stack month, week actions, results, then household and pantry; desktop has a side column.
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
       <div className="contents lg:block lg:space-y-6">
-        <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={(w) => show(month, w)} onOpen={setOpenDay} />
+        <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={setWeek} onOpen={setOpenDay} />
         <div className="order-3 space-y-6 empty:hidden">
           {shopping && <ShoppingListCard items={shopping} done={bought} onToggle={toggleBought} />}
           {needed && (
