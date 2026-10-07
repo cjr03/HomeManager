@@ -7,13 +7,14 @@ import { cn } from '@/lib/utils'
 export type Person = { id: number; username: string; avatar: string | null }
 export type Occurrence = { chore_id: number; title: string; date: string; assignee: Person; owner_id: number; done: boolean }
 
-/** A chore occurrence with a done checkbox; calls onChange(done) once the server has saved it. */
+/** A chore occurrence with a done checkbox. Updates optimistically via onChange and reverts if the save fails. */
 export function ChoreCheck({ chore, onChange }: { chore: Occurrence; onChange: (done: boolean) => void }) {
   async function toggle(done: boolean) {
+    onChange(done)
     try {
       await api(`/api/chores/${chore.chore_id}/done/${chore.date}`, { method: done ? 'POST' : 'DELETE' })
-      onChange(done)
     } catch (err) {
+      onChange(!done)
       toast.error(errorText(err))
     }
   }
@@ -24,7 +25,7 @@ export function ChoreCheck({ chore, onChange }: { chore: Occurrence; onChange: (
         type="checkbox"
         checked={chore.done}
         onChange={(e) => void toggle(e.target.checked)}
-        className="size-4 shrink-0 cursor-pointer accent-primary"
+        className="size-4 shrink-0 cursor-pointer accent-primary dark:scheme-dark"
       />
       <span className={cn('flex-1 truncate font-medium transition-colors', chore.done && 'text-muted-foreground line-through')}>
         {chore.title}

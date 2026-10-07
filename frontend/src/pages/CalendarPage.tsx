@@ -44,7 +44,7 @@ const longDay = (d: string) => formatDay(d, { weekday: 'long', month: 'long', da
 const shortDay = (d: string) => formatDay(d, { month: 'short', day: 'numeric' })
 const hhmm = (t: string | null) => t?.slice(0, 5) ?? ''
 const selectClass =
-  'h-9 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 [&>option]:bg-popover'
+  'h-9 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 dark:scheme-dark [&>option]:bg-popover'
 
 function describeChore(c: Chore) {
   if (c.recurrence === 'none') return `Once on ${shortDay(c.start_date)}`
@@ -140,7 +140,7 @@ function EventForm({ event, day, onDone }: { event: CalEvent | null; day: string
     <form onSubmit={submit} className="space-y-3 rounded-xl bg-muted/60 p-4 animate-in fade-in slide-in-from-top-2">
       <div className="grid grid-cols-[1fr_auto] gap-3">
         <Field id="event-title" label="Title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-        <Field id="event-time" label="Time" type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+        <Field id="event-time" label="Time" type="time" className="dark:scheme-dark" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="event-notes">Notes</Label>
@@ -151,7 +151,7 @@ function EventForm({ event, day, onDone }: { event: CalEvent | null; day: string
           type="checkbox"
           checked={form.shared}
           onChange={(e) => setForm({ ...form, shared: e.target.checked })}
-          className="size-4 accent-primary"
+          className="size-4 accent-primary dark:scheme-dark"
         />
         Share with linked accounts
       </label>
@@ -225,7 +225,7 @@ function DayDialog({
           {!events.length && !editing && <p className="text-sm text-muted-foreground">Nothing planned yet.</p>}
           <ul className="space-y-1">
             {events.map((e) => {
-              const owner = e.owner_id === me.id ? null : people.find((p) => p.id === e.owner_id)
+              const mine = e.owner_id === me.id
               return (
                 <li key={e.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-muted/60">
                   <span className="w-11 shrink-0 pt-0.5 text-sm font-semibold text-primary tabular-nums">
@@ -234,8 +234,10 @@ function DayDialog({
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{e.title}</p>
                     {e.notes && <p className="text-sm whitespace-pre-line text-muted-foreground">{e.notes}</p>}
-                    {owner !== null ? (
-                      <p className="text-xs text-muted-foreground">Shared by {owner?.username ?? 'a linked account'}</p>
+                    {!mine ? (
+                      <p className="text-xs text-muted-foreground">
+                        Shared by {people.find((p) => p.id === e.owner_id)?.username ?? 'a linked account'}
+                      </p>
                     ) : (
                       e.shared && (
                         <Badge variant="secondary" className="mt-1">
@@ -244,7 +246,7 @@ function DayDialog({
                       )
                     )}
                   </div>
-                  {owner === null && (
+                  {mine && (
                     <div className="flex">
                       <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label={`Edit ${e.title}`} onClick={() => setEditing(e)}>
                         <Pencil />
@@ -325,7 +327,7 @@ function ChoreForm({ chore, people, onDone }: { chore: Chore | null; people: Per
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-xl bg-muted/60 p-4 animate-in fade-in slide-in-from-top-2">
+    <form onSubmit={submit} className="max-w-2xl space-y-3 rounded-xl bg-muted/60 p-4 animate-in fade-in slide-in-from-top-2">
       <Field id="chore-title" label="Title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
@@ -359,11 +361,12 @@ function ChoreForm({ chore, people, onDone }: { chore: Chore | null; people: Per
             ))}
           </select>
         </div>
-        <Field id="chore-start" label="Starts" type="date" required value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+        <Field id="chore-start" label="Starts" type="date" className="dark:scheme-dark" required value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
         <Field
           id="chore-end"
           label="Ends (optional)"
           type="date"
+          className="dark:scheme-dark"
           min={form.start_date}
           disabled={form.recurrence === 'none'}
           value={form.end_date}
@@ -427,7 +430,7 @@ function ChoresCard({ chores, people, onChanged }: { chores: Chore[]; people: Pe
           />
         )}
         {!chores.length && !editing && <p className="text-sm text-muted-foreground">No chores yet. Add one and pick who does it.</p>}
-        <ul className="space-y-1">
+        <ul className="grid gap-1 md:grid-cols-2">
           {chores.map((c) => (
             <li key={c.id} className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-muted/60">
               <UserAvatar username={c.assignee.username} avatar={c.assignee.avatar} className="size-8" />
@@ -500,7 +503,7 @@ export function CalendarPage() {
     }))
 
   return (
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-4">
           <h1>Calendar</h1>
