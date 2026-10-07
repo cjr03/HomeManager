@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 
 type ShoppingItem = Item & { category: string }
 type Agent = 'generate' | 'shopping'
+type ShoppingOut = { needed: { items: Item[] }; shopping: { items: ShoppingItem[] } }
 type DayMeals = Partial<Record<Slot, Meal>>
 
 const CATEGORIES = ['produce', 'dairy', 'meat', 'seafood', 'bakery', 'pantry', 'frozen', 'beverages', 'other']
@@ -348,19 +349,28 @@ export function MealsPage() {
   }, [month])
   useEffect(() => void load(), [load])
 
+  useEffect(() => {
+    let stale = false
+    setNeeded(null)
+    setShopping(null)
+    api<ShoppingOut | null>(`/api/meals/shopping-list?week_start=${week}`)
+      .then((r) => {
+        if (stale || !r) return
+        setNeeded(r.needed.items)
+        setShopping(r.shopping.items)
+      })
+      .catch((err) => toast.error(errorText(err)))
+    return () => {
+      stale = true
+    }
+  }, [week])
+
   const byDay = new Map<string, DayMeals>()
   for (const m of meals) byDay.set(m.date, { ...byDay.get(m.date), [m.slot]: m })
 
-  function selectWeek(w: string) {
-    if (w === week) return
-    setWeek(w)
-    setNeeded(null)
-    setShopping(null)
-  }
-
   function changeMonth(m: string) {
     setMonth(m)
-    selectWeek(weekStart(m === currentMonth() ? today() : `${m}-01`))
+    setWeek(weekStart(m === currentMonth() ? today() : `${m}-01`))
   }
 
   async function run(agent: Agent, call: () => Promise<void>) {
@@ -385,7 +395,7 @@ export function MealsPage() {
 
   const shoppingList = () =>
     run('shopping', async () => {
-      const r = await api<{ needed: { items: Item[] }; shopping: { items: ShoppingItem[] } }>('/api/meals/shopping-list', {
+      const r = await api<ShoppingOut>('/api/meals/shopping-list', {
         method: 'POST',
         json: { week_start: week },
       })
@@ -410,7 +420,7 @@ export function MealsPage() {
     // Phones stack month, week actions, results, then household and pantry; desktop has a side column.
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
       <div className="contents lg:block lg:space-y-6">
-        <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={selectWeek} onOpen={setOpenDay} />
+        <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={setWeek} onOpen={setOpenDay} />
         <div className="order-3 space-y-6 empty:hidden">
           {shopping && <ShoppingListCard key={builds} items={shopping} />}
           {needed && (

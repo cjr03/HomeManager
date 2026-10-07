@@ -46,6 +46,17 @@ class PantryItem(Base):
     unit: Mapped[str] = mapped_column(String(20))
 
 
+class ShoppingListRow(Base):
+    """The last shopping list built for a week; one per household, owned by whoever built it."""
+
+    __tablename__ = "shopping_lists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    week_start: Mapped[date]
+    data: Mapped[dict] = mapped_column(JSONB)
+
+
 def week_dates(week_start: date) -> list[date]:
     return [week_start + timedelta(days=i) for i in range(7)]
 
@@ -252,10 +263,24 @@ def groceries_needed(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
     return _ask(ag.groceries_needed, _week_plans(db, ids, body.week_start), _household_size(db, ids))
 
 
+def _week_list(ids: list[int], week_start: date):
+    return ShoppingListRow.user_id.in_(ids), ShoppingListRow.week_start == week_start
+
+
+@router.get("/meals/shopping-list", response_model=ShoppingOut | None)
+def saved_shopping_list(week_start: date, user: CurrentUser, db: DB):
+    rows = db.scalars(select(ShoppingListRow.data).where(*_week_list(household(db, user), week_start)))
+    return rows.first()
+
+
 @router.post("/meals/shopping-list", response_model=ShoppingOut)
 def shopping_list(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
     ids = household(db, user)
-    return _shopping(db, ids, ag, _week_plans(db, ids, body.week_start), _pantry(db, ids))
+    out = _shopping(db, ids, ag, _week_plans(db, ids, body.week_start), _pantry(db, ids))
+    db.execute(delete(ShoppingListRow).where(*_week_list(ids, body.week_start)))
+    db.add(ShoppingListRow(user_id=user.id, week_start=body.week_start, data=out.model_dump(mode="json")))
+    db.commit()
+    return out
 
 
 @router.post("/meals/generate", response_model=list[MealOut])

@@ -1,5 +1,6 @@
 from datetime import date
 import pytest
+from sqlalchemy import func, select
 
 from app.agents import (
     AgentError,
@@ -16,7 +17,7 @@ from app.agents import (
 )
 from app.accounts import Link
 from app.main import app
-from app.meals import MealEntry, day_plans, get_agents, pantry_remainder, week_dates
+from app.meals import MealEntry, ShoppingListRow, day_plans, get_agents, pantry_remainder, week_dates
 
 SUNDAY = "2026-10-04"
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -488,3 +489,22 @@ def test_generate_pantry_settles_the_shared_pantry(make_user, client_for, db, fa
     assert r.status_code == 200 and r.json() == expected
     assert client_for(ann).get("/api/pantry").json() == expected
     assert fake.calls["groceries_needed"][1] == 2
+
+
+def test_shopping_list_is_saved_with_its_week(make_user, client_for, db, fake):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    a = client_for(ann)
+    put_meal(a, SUNDAY, "dinner")
+    url = f"/api/meals/shopping-list?week_start={SUNDAY}"
+    assert a.get(url).json() is None
+    built = a.post("/api/meals/shopping-list", json={"week_start": SUNDAY}).json()
+    assert a.get(url).json() == built
+    assert client_for(bob).get(url).json() == built  # the household shares it
+    assert a.get("/api/meals/shopping-list?week_start=2026-10-11").json() is None
+    client_for(bob).post("/api/meals/shopping-list", json={"week_start": SUNDAY})  # a rebuild replaces it
+    assert db.scalar(select(func.count()).select_from(ShoppingListRow)) == 1
+    fake.error = AgentError("down")
+    a.post("/api/meals/shopping-list", json={"week_start": SUNDAY})
+    assert a.get(url).json() == built  # a failed rebuild keeps the saved list
+    assert client_for(make_user()).get(url).json() is None
