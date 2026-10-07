@@ -60,7 +60,7 @@ export function AppShell() {
         </div>
       </header>
       {/* xl screens: the page plus a sticky assistant column, keeping the page at max-w-6xl. */}
-      <div className="mx-auto max-w-6xl items-start gap-6 px-4 pb-10 sm:px-6 xl:grid xl:max-w-[96rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="mx-auto max-w-6xl items-start gap-6 px-4 pb-10 sm:px-6 xl:grid xl:max-w-[96rem] xl:grid-cols-[minmax(0,1fr)_18rem]">
         <main className="min-w-0">
           <Outlet />
         </main>

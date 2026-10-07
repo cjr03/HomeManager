@@ -103,8 +103,8 @@ export function AssistantPanel() {
       <aside
         aria-label="Assistant"
         className={cn(
-          'fixed inset-x-3 top-3 bottom-24 z-50 sm:inset-x-auto sm:top-auto sm:right-6 sm:bottom-6 sm:h-[36rem] sm:w-96',
-          'xl:sticky xl:inset-auto xl:top-4 xl:z-auto xl:block xl:h-[calc(100svh-2rem)] xl:w-auto',
+          'fixed inset-x-3 bottom-24 z-50 h-[min(28rem,calc(100svh-7rem))] sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-80',
+          'xl:sticky xl:inset-auto xl:top-4 xl:z-auto xl:block xl:h-[min(32rem,calc(100svh-2rem))] xl:w-auto',
           open ? 'block' : 'hidden',
         )}
       >
