@@ -207,10 +207,10 @@ describe('MealsPage', () => {
       expect(screen.queryByRole('region', { name: 'Groceries needed' })).not.toBeInTheDocument()
     })
 
-    it('shows the groceries needed for the week', async () => {
-      setup({ 'POST /api/meals/groceries-needed': { items: [{ name: 'Rice', quantity: 0.75, unit: 'kg' }] } })
-      await userEvent.click(await screen.findByRole('button', { name: 'Groceries needed' }))
-      expect(await screen.findByRole('region', { name: 'Groceries needed' })).toHaveTextContent('0.75 kg Rice')
+    it('offers only the shopping list, not a separate groceries-needed button', async () => {
+      setup({})
+      await screen.findByRole('button', { name: 'Build shopping list' })
+      expect(screen.queryByRole('button', { name: 'Groceries needed' })).not.toBeInTheDocument()
     })
 
     it('generates meals for chosen slots and reloads the month', async () => {
@@ -230,15 +230,15 @@ describe('MealsPage', () => {
 
     it('shows the server error in a toast', async () => {
       setup({
-        'POST /api/meals/groceries-needed': () => {
+        'POST /api/meals/shopping-list': () => {
           throw new ApiError(502, 'The meal assistant is unavailable right now. Please try again.')
         },
       })
-      await userEvent.click(await screen.findByRole('button', { name: 'Groceries needed' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Build shopping list' }))
       await vi.waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith('The meal assistant is unavailable right now. Please try again.'),
       )
-      expect(screen.getByRole('button', { name: 'Groceries needed' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Build shopping list' })).toBeEnabled()
     })
   })
 })

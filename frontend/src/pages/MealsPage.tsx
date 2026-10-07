@@ -1,4 +1,4 @@
-import { Copy, ListChecks, Loader2, ShoppingCart, Sparkles, Users } from 'lucide-react'
+import { Copy, Loader2, ShoppingCart, Sparkles, Users } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
@@ -17,7 +17,7 @@ import { addDays, currentMonth, monthGrid, today, weekStart } from '@/lib/month'
 import { cn } from '@/lib/utils'
 
 type ShoppingItem = Item & { category: string }
-type Agent = 'generate' | 'needed' | 'shopping'
+type Agent = 'generate' | 'shopping'
 type DayMeals = Partial<Record<Slot, Meal>>
 
 const CATEGORIES = ['produce', 'dairy', 'meat', 'seafood', 'bakery', 'pantry', 'frozen', 'beverages', 'other']
@@ -383,12 +383,6 @@ export function MealsPage() {
     })
   }
 
-  const groceries = () =>
-    run('needed', async () => {
-      const r = await api<{ items: Item[] }>('/api/meals/groceries-needed', { method: 'POST', json: { week_start: week } })
-      setNeeded(r.items)
-    })
-
   const shoppingList = () =>
     run('shopping', async () => {
       const r = await api<{ needed: { items: Item[] }; shopping: { items: ShoppingItem[] } }>('/api/meals/shopping-list', {
@@ -437,7 +431,6 @@ export function MealsPage() {
         <SectionCard className="order-2" title={weekLabel(week)} description="Selected week. Pick another from the calendar.">
           <div className="space-y-2">
             {action('generate', 'Generate meals', Sparkles, () => setGenerating(true), true)}
-            {action('needed', 'Groceries needed', ListChecks, groceries)}
             {action('shopping', 'Build shopping list', ShoppingCart, shoppingList)}
             {busy && (
               <p role="status" className="pt-1 text-sm text-muted-foreground">
