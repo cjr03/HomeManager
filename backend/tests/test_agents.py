@@ -34,7 +34,7 @@ class FakeClient:
     def __init__(self, output=None, error=None):
         self.calls = []
         self._output, self._error = output, error
-        self.beta = SimpleNamespace(messages=SimpleNamespace(parse=self._parse))
+        self.messages = SimpleNamespace(parse=self._parse)
 
     def _parse(self, **kwargs):
         self.calls.append(kwargs)
@@ -108,7 +108,6 @@ def test_groceries_needed_request():
     assert call["model"] == "claude-sonnet-5-5"
     assert call["system"] == agents.GROCERIES_NEEDED_PROMPT
     assert call["output_format"] is GroceryList
-    assert call["fallbacks"] == "default"
     payload = user_payload(call)
     assert payload["household_size"] == 3
     assert payload["week"][0] == {
@@ -241,3 +240,28 @@ def test_fake_generate_meals_only_requested_slots(fake_mode, slots):
         for meal in day.meals:
             assert meal.servings == 3
             assert meal.ingredients and meal.instructions
+
+
+def test_real_sdk_request_and_parse():
+    """Drive the real SDK through a mock transport: request shape and parsing, no network."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        text = json.dumps({"items": [{"name": "Rice", "quantity": 1, "unit": "kg"}]})
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-sonnet-5-5",
+                "content": [{"type": "text", "text": text}], "stop_reason": "end_turn",
+                "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )  # fmt: skip
+
+    client = anthropic.Anthropic(api_key="test", http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    result = groceries_needed(WEEK, 2, client=client)
+    assert result == GroceryList(items=[GroceryItem(name="Rice", quantity=1, unit="kg")])
+    body = seen["body"]
+    assert body["model"] == "claude-sonnet-5-5"
+    assert body["system"] == agents.GROCERIES_NEEDED_PROMPT
+    assert body["output_config"]["format"]["type"] == "json_schema"
