@@ -22,8 +22,8 @@ def signup_body(**over):
     body = {
         "email": "ann@example.com",
         "username": "Ann_1",
-        "password": "s3cret-pass",
-        "password_confirm": "s3cret-pass",
+        "password": "S3cret-pass",
+        "password_confirm": "S3cret-pass",
         "household_size": 3,
         "preferences": {"diet": "vegetarian", "allergies": ["peanuts"], "favorite_cuisines": ["Thai"]},
     }
@@ -69,7 +69,9 @@ def test_signup_schema_password_mismatch():
 
 @pytest.mark.parametrize(
     "field,value",
-    [("username", "ab"), ("username", "x" * 33), ("username", "bad name!"), ("password", "short"),
+    [("username", ""), ("username", "x" * 15), ("username", "bad name!"), ("password", "short"),
+     ("password", "Abcdef1!"), ("password", "abcdefg1!"), ("password", "ABCDEFG1!"), ("password", "Abcdefgh!"),
+     ("password", "Abcdefgh1"),
      ("household_size", 0), ("household_size", 21), ("email", "not-an-email")],
 )
 def test_signup_schema_field_rules(field, value):
@@ -80,8 +82,13 @@ def test_signup_schema_field_rules(field, value):
         SignupIn(**body)
 
 
+@pytest.mark.parametrize("username", ["a", "x" * 14])
+def test_signup_schema_username_length_bounds(username):
+    assert SignupIn(**signup_body(username=username)).username == username
+
+
 def test_signup_schema_defaults():
-    s = SignupIn(email="a@b.co", username="abc", password="12345678", password_confirm="12345678")
+    s = SignupIn(email="a@b.co", username="a", password="Abcdefg1!", password_confirm="Abcdefg1!")
     assert s.household_size == 1
     assert s.preferences == Preferences()
 
@@ -142,7 +149,7 @@ def test_signup_creates_user_and_sets_cookie(client, db):
     assert "session=" in cookie and "HttpOnly" in cookie and "SameSite=lax" in cookie
     assert "Secure" not in cookie
     user = db.query(User).filter_by(username="Ann_1").one()
-    assert verify_password("s3cret-pass", user.password_hash)
+    assert verify_password("S3cret-pass", user.password_hash)
     assert client.get("/api/me").json()["username"] == "Ann_1"
 
 

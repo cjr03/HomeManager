@@ -2,13 +2,13 @@ import { expect, test } from '@playwright/test'
 
 // The backend runs with LLM_FAKE=1, so the agents return deterministic canned meals and lists.
 test('plan a week: pantry, generate, edit a meal, build the shopping list', async ({ page }) => {
-  const username = `meals_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`
+  const username = `meals${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 1e3)}`
   const res = await page.request.post('/api/auth/signup', {
     data: {
       email: `${username}@example.com`,
       username,
-      password: 'meals-pass',
-      password_confirm: 'meals-pass',
+      password: 'Meals-pass1',
+      password_confirm: 'Meals-pass1',
       household_size: 2,
     },
   })

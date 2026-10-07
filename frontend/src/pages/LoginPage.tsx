@@ -13,11 +13,18 @@ import { cn } from '@/lib/utils'
 type Account = { email: string; username: string; password: string; password_confirm: string }
 type Errors = Partial<Record<keyof Account, string>>
 
+export function passwordError(p: string): string | undefined {
+  if (p.length < 9) return 'Use at least 9 characters'
+  if (![/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].every((r) => r.test(p)))
+    return 'Include an upper- and lower-case letter, a number and a special character'
+}
+
 export function validateAccount(a: Account): Errors {
   const e: Errors = {}
   if (!/^\S+@\S+\.\S+$/.test(a.email)) e.email = 'Enter a valid email'
-  if (!/^[A-Za-z0-9_]{3,32}$/.test(a.username)) e.username = '3–32 letters, numbers or underscores'
-  if (a.password.length < 8) e.password = 'Use at least 8 characters'
+  if (!/^[A-Za-z0-9_]{1,14}$/.test(a.username)) e.username = '1–14 letters, numbers or underscores'
+  const pw = passwordError(a.password)
+  if (pw) e.password = pw
   else if (a.password !== a.password_confirm) e.password_confirm = 'Passwords do not match'
   return e
 }

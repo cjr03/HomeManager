@@ -1,12 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const unique = (p: string) => `${p}_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`
+const unique = (p: string) => `${p}${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 1e3)}`
 
 /** Signs the page's browser context in as a fresh user (page.request shares its cookies). */
 async function signUp(page: Page) {
   const username = unique('cal')
   const res = await page.request.post('/api/auth/signup', {
-    data: { email: `${username}@example.com`, username, password: 'calendar-pass', password_confirm: 'calendar-pass' },
+    data: { email: `${username}@example.com`, username, password: 'Calendar-pass1', password_confirm: 'Calendar-pass1' },
   })
   expect(res.status()).toBe(201)
   return username
