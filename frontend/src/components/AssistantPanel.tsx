@@ -231,6 +231,9 @@ export function AssistantPanel() {
                   }
                 }}
               />
+              <Button type="submit" size="icon" className="shrink-0 rounded-full" aria-label="Send" disabled={busy || listening || !draft.trim()}>
+                <Send />
+              </Button>
               {recognizer() && (
                 <Button
                   type="button"
@@ -245,9 +248,6 @@ export function AssistantPanel() {
                   <Mic />
                 </Button>
               )}
-              <Button type="submit" size="icon" className="shrink-0 rounded-full" aria-label="Send" disabled={busy || listening || !draft.trim()}>
-                <Send />
-              </Button>
             </div>
           </form>
         </Card>
