@@ -59,7 +59,7 @@ describe('CalendarPage', () => {
     setup()
     const tenth = await day('Tuesday, March 10')
     expect(tenth).toHaveAttribute('aria-current', 'date')
-    expect(within(tenth).getByText('09:30')).toBeInTheDocument()
+    expect(await within(tenth).findByText('09:30')).toBeInTheDocument() // the grid renders before the month loads
     expect(within(tenth).getByText('Dentist')).toBeInTheDocument()
     expect(within(tenth).getByText('Bins').closest('li')).toHaveTextContent('Bins, done')
     expect(within(tenth).getByText('Bins').closest('li')!.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,eve')
