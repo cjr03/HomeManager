@@ -13,15 +13,17 @@ type Row = { name: string; quantity: string; unit: string }
 const toRows = ({ items }: { items: Item[] }) => items.map((i) => ({ ...i, quantity: String(i.quantity) }))
 
 export function PantryCard() {
-  const [rows, setRows] = useState<Row[]>([])
+  const [rows, setRows] = useState<Row[] | null>(null) // null until loaded, so a late load can't wipe edits
 
   useEffect(() => {
     api<{ items: Item[] }>('/api/pantry').then((p) => setRows(toRows(p)), (err) => toast.error(errorText(err)))
   }, [])
 
+  if (!rows) return null
+
   const set = (n: number, patch: Partial<Row>) => setRows(rows.map((r, i) => (i === n ? { ...r, ...patch } : r)))
 
-  async function save(e: FormEvent) {
+  const save = async (e: FormEvent) => {
     e.preventDefault()
     const items = rows
       .filter((r) => r.name.trim())

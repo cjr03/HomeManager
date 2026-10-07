@@ -124,6 +124,12 @@ describe('MealsPage', () => {
   })
 
   describe('pantry', () => {
+    it('waits for the saved pantry before allowing edits', async () => {
+      setup({ 'GET /api/pantry': () => new Promise(() => {}) })
+      expect(await screen.findByText('2 people')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add item' })).not.toBeInTheDocument()
+    })
+
     it('edits, adds and removes rows, then saves the whole list', async () => {
       const put = vi.fn((init: { json: unknown }) => init.json)
       setup({ 'PUT /api/pantry': put })

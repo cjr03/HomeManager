@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, currentMonth, formatDay, monthGrid, monthLabel, shiftMonth, today, weekStart } from './month'
-64dc677 (test(meals): Meals page component tests, date helper tests, E2E flow (RED: 14 failing))
 
 describe('monthGrid', () => {
   it('pads a month that starts mid-week with leading and trailing nulls', () => {
