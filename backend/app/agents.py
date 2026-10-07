@@ -177,7 +177,7 @@ home cook can follow; include temperatures and times where relevant. Do not numb
 {_DATA_RULES}"""
 
 
-def _call[T: BaseModel](client, system: str, data: dict, output: type[T]) -> T:
+def _call[T: BaseModel](client, system: str, data: dict, output: type[T], effort: str = "low") -> T:
     # Escape "<" so user text can never close the <input_json> block early.
     payload = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
     client = client or get_client()
@@ -188,6 +188,8 @@ def _call[T: BaseModel](client, system: str, data: dict, output: type[T]) -> T:
             system=system,
             messages=[{"role": "user", "content": f"<input_json>\n{payload}\n</input_json>"}],
             output_format=output,
+            # Thinking time dominates latency; the default "high" effort is overkill for these.
+            output_config={"effort": effort},
         )
     except (anthropic.AnthropicError, ValidationError, TypeError) as e:  # TypeError: no credentials
         raise AgentError("The meal assistant is unavailable right now. Please try again.") from e
@@ -223,7 +225,8 @@ def generate_meals(
         "preferences": _dump(preferences),
         "have": _dump(have),
     }
-    return _call(client, MEAL_GENERATOR_PROMPT, data, WeekMeals)
+    # "medium", not "low": allergies and diets are hard constraints worth a little more thought.
+    return _call(client, MEAL_GENERATOR_PROMPT, data, WeekMeals, effort="medium")
 
 
 def get_client():

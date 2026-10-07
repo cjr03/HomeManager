@@ -114,6 +114,7 @@ def test_groceries_needed_request():
     assert call["model"] == "claude-sonnet-5-5"
     assert call["system"] == agents.GROCERIES_NEEDED_PROMPT
     assert call["output_format"] is GroceryList
+    assert call["output_config"] == {"effort": "low"}
     payload = user_payload(call)
     assert payload["household_size"] == 3
     assert payload["week"][0] == {
@@ -129,6 +130,7 @@ def test_shopping_list_request():
     (call,) = client.calls
     assert call["system"] == agents.SHOPPING_LIST_PROMPT
     assert call["output_format"] is ShoppingList
+    assert call["output_config"] == {"effort": "low"}
     payload = user_payload(call)
     assert payload["needed"] == [{"name": "Spaghetti", "quantity": 500, "unit": "g"}]
     assert payload["have"] == [{"name": "Milk", "quantity": 1, "unit": "l"}]
@@ -142,6 +144,7 @@ def test_generate_meals_request():
     (call,) = client.calls
     assert call["system"] == agents.MEAL_GENERATOR_PROMPT
     assert call["output_format"] is WeekMeals
+    assert call["output_config"] == {"effort": "medium"}  # allergies are hard constraints
     payload = user_payload(call)
     assert payload["household_size"] == 2
     assert payload["slots"] == ["dinner"]
@@ -278,3 +281,4 @@ def test_real_sdk_request_and_parse():
     assert body["model"] == "claude-sonnet-5-5"
     assert body["system"] == agents.GROCERIES_NEEDED_PROMPT
     assert body["output_config"]["format"]["type"] == "json_schema"
+    assert body["output_config"]["effort"] == "low"
