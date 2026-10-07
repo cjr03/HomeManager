@@ -16,9 +16,9 @@ type SharedData = MonthData & { members: Member[]; per_member: { user_id: number
 type LinkEntry = { id: number; user_id: number; username: string; avatar: string | null }
 
 const SECTIONS: { title: string; kinds: Kind[]; grid: string }[] = [
+  { title: "This month's plan", kinds: ['income', 'expense', 'savings'], grid: 'lg:grid-cols-2 [&>*:first-child]:lg:col-span-2' },
   { title: 'What you own', kinds: ['asset', 'debit'], grid: 'lg:grid-cols-2' },
   { title: 'What you owe', kinds: ['loan', 'credit'], grid: 'lg:grid-cols-2' },
-  { title: "This month's plan", kinds: ['income', 'expense', 'savings'], grid: 'lg:grid-cols-2 [&>*:first-child]:lg:col-span-2' },
 ]
 
 function Figure({ label, children }: { label: string; children: ReactNode }) {
