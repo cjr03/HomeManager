@@ -17,7 +17,7 @@ import { currentMonth, formatDay, monthGrid, today } from '@/lib/month'
 import { cn } from '@/lib/utils'
 
 type CalEvent = { id: number; owner_id: number; title: string; date: string; start_time: string | null; notes: string; shared: boolean }
-type MonthData = { events: CalEvent[]; chores: Occurrence[] }
+type MonthData = { events: CalEvent[]; chores: Occurrence[]; people: Person[] }
 type Recurrence = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly'
 type Chore = {
   id: number
@@ -63,10 +63,10 @@ function EventPill({ event }: { event: CalEvent }) {
   )
 }
 
-function ChorePill({ chore }: { chore: Occurrence }) {
+function ChorePill({ chore, assignee }: { chore: Occurrence; assignee?: Person }) {
   return (
     <li className="flex min-w-0 items-center gap-1 rounded-md border bg-card px-1 py-0.5 text-xs">
-      <UserAvatar username={chore.assignee.username} avatar={chore.assignee.avatar} className="size-4 text-[9px]" />
+      {assignee && <UserAvatar username={assignee.username} avatar={assignee.avatar} className="size-4 text-[9px]" />}
       <span className={cn('truncate', chore.done && 'text-muted-foreground line-through')}>{chore.title}</span>
       {chore.done && (
         <>
@@ -78,10 +78,22 @@ function ChorePill({ chore }: { chore: Occurrence }) {
   )
 }
 
-function DayCell({ day, events, chores, onOpen }: { day: string; events: CalEvent[]; chores: Occurrence[]; onOpen: () => void }) {
+function DayCell({
+  day,
+  events,
+  chores,
+  people,
+  onOpen,
+}: {
+  day: string
+  events: CalEvent[]
+  chores: Occurrence[]
+  people: Person[]
+  onOpen: () => void
+}) {
   const items = [
     ...events.map((e) => <EventPill key={`e${e.id}`} event={e} />),
-    ...chores.map((c) => <ChorePill key={`c${c.chore_id}`} chore={c} />),
+    ...chores.map((c) => <ChorePill key={`c${c.chore_id}`} chore={c} assignee={people.find((p) => p.id === c.assignee_id)} />),
   ]
   const shown = items.length > MAX_IN_CELL ? MAX_IN_CELL - 1 : items.length
   return (
@@ -287,7 +299,7 @@ function DayDialog({
             <ul>
               {chores.map((c) => (
                 <li key={c.chore_id}>
-                  <ChoreCheck chore={c} onChange={(done) => onToggled(c, done)} />
+                  <ChoreCheck chore={c} assignee={data.people.find((p) => p.id === c.assignee_id)} onChange={(done) => onToggled(c, done)} />
                 </li>
               ))}
             </ul>
@@ -468,7 +480,7 @@ function ChoresCard({ chores, people, onChanged }: { chores: Chore[]; people: Pe
 
 export function CalendarPage() {
   const [month, setMonth] = useState(currentMonth)
-  const [data, setData] = useState<MonthData>({ events: [], chores: [] })
+  const [data, setData] = useState<MonthData>({ events: [], chores: [], people: [] })
   const [chores, setChores] = useState<Chore[]>([])
   const [people, setPeople] = useState<Person[]>([])
   const [openDay, setOpenDay] = useState<string | null>(null)
@@ -525,6 +537,7 @@ export function CalendarPage() {
                     day={day}
                     events={data.events.filter((e) => e.date === day)}
                     chores={data.chores.filter((c) => c.date === day)}
+                    people={data.people}
                     onOpen={() => setOpenDay(day)}
                   />
                 ) : (

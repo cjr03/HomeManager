@@ -64,6 +64,18 @@ def test_end_date_is_inclusive_and_stops_series():
     assert occurrences(D("2026-01-31"), "monthly", D("2026-02-27"), D("2026-02-01"), D("2026-02-28")) == []
 
 
+def test_monthly_range_starting_mid_month():
+    assert occurrences(D("2026-03-10"), "monthly", None, D("2026-03-11"), D("2026-04-30")) == [D("2026-04-10")]
+    assert occurrences(D("2026-03-10"), "monthly", None, D("2026-03-31"), D("2026-03-31")) == []
+
+
+def test_series_stop_at_the_end_of_the_calendar():
+    last = D("9999-12-31")
+    assert occurrences(D("9999-12-01"), "daily", None, last, last) == [last]
+    assert occurrences(D("9999-12-25"), "weekly", None, last, last) == []
+    assert occurrences(D("9999-11-15"), "monthly", None, D("9999-12-01"), last) == [D("9999-12-15")]
+
+
 def test_range_before_start_is_empty():
     for rec in ("none", "daily", "weekly", "biweekly", "monthly"):
         assert occurrences(D("2026-06-01"), rec, None, D("2026-05-01"), D("2026-05-31")) == []
@@ -178,6 +190,14 @@ def test_shared_events_visible_only_through_accepted_link(make_user, client_for,
 def test_calendar_month_validation(auth_client):
     assert auth_client.get("/api/calendar/2026-13").status_code == 422
     assert auth_client.get("/api/calendar/march").status_code == 422
+    assert auth_client.get("/api/calendar/0000-01").status_code == 422
+
+
+def test_last_day_of_the_calendar(auth_client):
+    cid = chore(auth_client, auth_client.user.id, recurrence="daily").json()["id"]
+    assert len(auth_client.get("/api/calendar/9999-12").json()["chores"]) == 31
+    assert [c["chore_id"] for c in auth_client.get("/api/chores/today?date=9999-12-31").json()] == [cid]
+    assert auth_client.post(f"/api/chores/{cid}/done/9999-12-31").status_code == 204
 
 
 def test_calendar_events_sorted_by_date_then_time(auth_client):
@@ -248,12 +268,14 @@ def test_calendar_chore_occurrences(pair):
     ch = chore(ca, bob.id, end_date="2026-03-16")
     cid = ch.json()["id"]
     expected = [
-        {"chore_id": cid, "title": "Bins", "date": d, "owner_id": ann.id, "done": False,
-         "assignee": {"id": bob.id, "username": "bob", "avatar": None}}
+        {"chore_id": cid, "title": "Bins", "date": d, "owner_id": ann.id, "done": False, "assignee_id": bob.id}
         for d in ("2026-03-02", "2026-03-09", "2026-03-16")
     ]
-    assert ca.get("/api/calendar/2026-03").json()["chores"] == expected
-    assert cb.get("/api/calendar/2026-03").json()["chores"] == expected
+    people = [{"id": bob.id, "username": "bob", "avatar": None}]
+    for c in (ca, cb):
+        month = c.get("/api/calendar/2026-03").json()
+        assert month["chores"] == expected
+        assert month["people"] == people  # each assignee (and their avatar) sent once, not per occurrence
     assert ca.get("/api/calendar/2026-04").json()["chores"] == []
 
 
@@ -288,6 +310,9 @@ def test_completion_date_must_be_an_occurrence(pair):
     assert cb.post(f"/api/chores/{cid}/done/2026-03-23").status_code == 400  # after end
     assert cb.delete(f"/api/chores/{cid}/done/2026-03-10").status_code == 400
     assert cb.post(f"/api/chores/{cid}/done/not-a-date").status_code == 422
+    monthly = chore(ca, bob.id, start_date="2026-03-10", recurrence="monthly").json()["id"]
+    assert cb.post(f"/api/chores/{monthly}/done/2026-03-31").status_code == 400
+    assert cb.post(f"/api/chores/{monthly}/done/2026-04-10").status_code == 204
 
 
 def test_today_lists_my_assigned_occurrences(pair):
@@ -295,6 +320,7 @@ def test_today_lists_my_assigned_occurrences(pair):
     mine = chore(cb, bob.id, title="Dishes", recurrence="daily").json()["id"]
     theirs = chore(ca, bob.id, title="Bins").json()["id"]
     chore(ca, ann.id, title="Ann only", recurrence="daily")
+    chore(cb, ann.id, title="Bob owns, Ann does", recurrence="daily")
     cb.post(f"/api/chores/{theirs}/done/2026-03-09")
 
     r = cb.get("/api/chores/today?date=2026-03-09")
@@ -306,17 +332,19 @@ def test_today_lists_my_assigned_occurrences(pair):
     assert cb.get("/api/chores/today").status_code == 422
 
 
-def test_unlinked_assignee_chores_remain_visible(pair, db):
-    """Removing the link keeps existing chores: the owner and the assignee both still see them,
-    and the owner can still edit as long as the assignee is unchanged."""
+def test_unlinking_hides_chores_from_the_former_partner(pair, db):
+    """After unlinking, the owner keeps the chore; the former assignee can no longer see or complete it."""
     ann, bob, ca, cb = pair
     cid = chore(ca, bob.id).json()["id"]
     db.query(Link).delete()
     db.flush()
     assert [c["id"] for c in ca.get("/api/chores").json()] == [cid]
     assert [c["chore_id"] for c in ca.get("/api/calendar/2026-03").json()["chores"]][:1] == [cid]
-    assert [c["chore_id"] for c in cb.get("/api/chores/today?date=2026-03-02").json()] == [cid]
+    assert cb.get("/api/chores").json() == []
+    assert cb.get("/api/calendar/2026-03").json()["chores"] == []
+    assert cb.get("/api/chores/today?date=2026-03-02").json() == []
+    assert cb.post(f"/api/chores/{cid}/done/2026-03-02").status_code == 404
+    assert cb.delete(f"/api/chores/{cid}/done/2026-03-02").status_code == 404
     body = {"title": "Bins!", "assignee_id": bob.id, "start_date": "2026-03-02", "recurrence": "weekly"}
-    assert ca.put(f"/api/chores/{cid}", json=body).status_code == 200
-    # but a new chore can't be given to them
-    assert chore(ca, bob.id).status_code == 400
+    assert ca.put(f"/api/chores/{cid}", json=body).status_code == 200  # owner can still edit
+    assert chore(ca, bob.id).status_code == 400  # but can't assign new chores to them

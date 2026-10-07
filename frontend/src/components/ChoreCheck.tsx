@@ -5,10 +5,10 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 export type Person = { id: number; username: string; avatar: string | null }
-export type Occurrence = { chore_id: number; title: string; date: string; assignee: Person; owner_id: number; done: boolean }
+export type Occurrence = { chore_id: number; title: string; date: string; assignee_id: number; owner_id: number; done: boolean }
 
 /** A chore occurrence with a done checkbox. Updates optimistically via onChange and reverts if the save fails. */
-export function ChoreCheck({ chore, onChange }: { chore: Occurrence; onChange: (done: boolean) => void }) {
+export function ChoreCheck({ chore, assignee, onChange }: { chore: Occurrence; assignee?: Person; onChange: (done: boolean) => void }) {
   async function toggle(done: boolean) {
     onChange(done)
     try {
@@ -30,7 +30,7 @@ export function ChoreCheck({ chore, onChange }: { chore: Occurrence; onChange: (
       <span className={cn('flex-1 truncate font-medium transition-colors', chore.done && 'text-muted-foreground line-through')}>
         {chore.title}
       </span>
-      <UserAvatar username={chore.assignee.username} avatar={chore.assignee.avatar} className="size-6 text-xs" />
+      {assignee && <UserAvatar username={assignee.username} avatar={assignee.avatar} className="size-6 text-xs" />}
     </label>
   )
 }

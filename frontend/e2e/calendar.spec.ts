@@ -41,14 +41,19 @@ test('a weekly chore starting today shows on the right days', async ({ page }) =
   await page.getByRole('button', { name: 'Save chore' }).click()
   await expect(page.getByText('Every week from')).toBeVisible()
 
+  // Check the six days in between in whichever month shows them, each after that month's chores loaded.
   const now = new Date()
-  await expect(cell(page, now).getByText('Water plants')).toBeVisible()
-  const tomorrow = addDays(now, 1)
-  if (tomorrow.getMonth() === now.getMonth()) await expect(cell(page, tomorrow).getByText('Water plants')).toHaveCount(0)
+  const [, ...between] = Array.from({ length: 7 }, (_, i) => addDays(now, i))
   const nextWeek = addDays(now, 7)
-  if (nextWeek.getMonth() !== now.getMonth()) await page.getByRole('button', { name: 'Next month' }).click()
+  const thisMonth = (d: Date) => d.getMonth() === now.getMonth()
+  const absent = async (days: Date[]) => {
+    for (const d of days) await expect(cell(page, d).getByText('Water plants')).toHaveCount(0)
+  }
+  await expect(cell(page, now).getByText('Water plants')).toBeVisible()
+  await absent(between.filter(thisMonth))
+  if (!thisMonth(nextWeek)) await page.getByRole('button', { name: 'Next month' }).click()
   await expect(cell(page, nextWeek).getByText('Water plants')).toBeVisible()
-  await expect(cell(page, addDays(now, 6)).getByText('Water plants')).toHaveCount(0)
+  await absent(between.filter((d) => !thisMonth(d)))
 })
 
 test('assign a chore to a linked partner who marks it done from the account page', async ({ browser }) => {

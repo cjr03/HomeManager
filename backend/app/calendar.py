@@ -1,6 +1,6 @@
 import calendar as cal
 import datetime as dt
-from datetime import date, timedelta
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Path
@@ -57,6 +57,8 @@ def occurrences(start: date, recurrence: Recurrence, end: date | None, range_sta
         while True:
             y, m = divmod(start.month - 1 + n, 12)
             y += start.year
+            if y > date.max.year:
+                return out
             d = date(y, m + 1, min(start.day, cal.monthrange(y, m + 1)[1]))
             if d > last:
                 return out
@@ -64,11 +66,9 @@ def occurrences(start: date, recurrence: Recurrence, end: date | None, range_sta
                 out.append(d)
             n += 1
     step = STEP_DAYS[recurrence]
-    d = start + timedelta(days=max(0, -(-(range_start - start).days // step)) * step)
-    while d <= last:
-        out.append(d)
-        d += timedelta(days=step)
-    return out
+    first = start.toordinal() + max(0, -(-(range_start - start).days // step)) * step
+    # Ordinals, not date arithmetic, so stepping past 9999-12-31 can't overflow.
+    return [date.fromordinal(o) for o in range(first, last.toordinal() + 1, step)]
 
 
 # ---- schemas ----
@@ -128,7 +128,7 @@ class Occurrence(BaseModel):
     chore_id: int
     title: str
     date: dt.date
-    assignee: Person
+    assignee_id: int
     owner_id: int
     done: bool
 
@@ -136,6 +136,7 @@ class Occurrence(BaseModel):
 class MonthOut(BaseModel):
     events: list[EventOut]
     chores: list[Occurrence]
+    people: list[Person]  # the chores' assignees, once each: avatars are large data URLs
 
 
 # ---- helpers ----
@@ -149,7 +150,11 @@ def _my_event(db: Session, event_id: int, user: User) -> Event:
 
 def _visible_chore(db: Session, chore_id: int, user: User, *, owner_only: bool = False) -> Chore:
     ch = db.get(Chore, chore_id)
-    if ch is None or user.id not in ((ch.owner_id,) if owner_only else (ch.owner_id, ch.assignee_id)):
+    visible = ch is not None and (
+        ch.owner_id == user.id
+        or (not owner_only and ch.assignee_id == user.id and ch.owner_id in linked_user_ids(db, user))
+    )
+    if not visible:
         raise HTTPException(404, "Chore not found")
     return ch
 
@@ -169,7 +174,7 @@ def _occurrences(db: Session, chores: list[Chore], start: date, end: date) -> li
     )
     out = [
         Occurrence(
-            chore_id=c.id, title=c.title, date=d, assignee=c.assignee, owner_id=c.owner_id, done=(c.id, d) in done
+            chore_id=c.id, title=c.title, date=d, assignee_id=c.assignee_id, owner_id=c.owner_id, done=(c.id, d) in done
         )
         for c in chores
         for d in occurrences(c.start_date, c.recurrence, c.end_date, start, end)
@@ -178,7 +183,9 @@ def _occurrences(db: Session, chores: list[Chore], start: date, end: date) -> li
 
 
 def _chores_of(db: Session, user: User, *, assigned_only: bool = False) -> list[Chore]:
-    who = Chore.assignee_id == user.id
+    """Chores I own or am assigned. Someone else's chore counts only while we're linked."""
+    owner_ok = or_(Chore.owner_id == user.id, Chore.owner_id.in_(linked_user_ids(db, user)))
+    who = and_(Chore.assignee_id == user.id, owner_ok)
     if not assigned_only:
         who = or_(who, Chore.owner_id == user.id)
     return list(db.scalars(select(Chore).where(who).order_by(Chore.id)))
@@ -187,7 +194,7 @@ def _chores_of(db: Session, user: User, *, assigned_only: bool = False) -> list[
 # ---- routes ----
 
 router = APIRouter(prefix="/api", tags=["calendar"])
-Month = Annotated[str, Path(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")]
+Month = Annotated[str, Path(pattern=r"^[1-9]\d{3}-(0[1-9]|1[0-2])$")]
 
 
 @router.get("/calendar/{month}", response_model=MonthOut)
@@ -203,7 +210,9 @@ def month_view(month: Month, user: CurrentUser, db: DB):
         )
         .order_by(Event.date, Event.start_time.nulls_first(), Event.id)
     )
-    return MonthOut(events=list(events), chores=_occurrences(db, _chores_of(db, user), start, end))
+    chores = _chores_of(db, user)
+    people = list({c.assignee_id: c.assignee for c in chores}.values())
+    return MonthOut(events=list(events), chores=_occurrences(db, chores, start, end), people=people)
 
 
 @router.post("/events", status_code=201, response_model=EventOut)

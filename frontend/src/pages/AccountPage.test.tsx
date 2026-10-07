@@ -166,7 +166,7 @@ describe('AccountPage', () => {
 
   describe("today's chores", () => {
     const TODAY = '/api/chores/today?date=2026-03-10'
-    const bins = { chore_id: 3, title: 'Bins', date: '2026-03-10', assignee: { id: 1, username: 'ann', avatar: null }, owner_id: 5, done: false }
+    const bins = { chore_id: 3, title: 'Bins', date: '2026-03-10', assignee_id: 1, owner_id: 5, done: false }
 
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ['Date'] })

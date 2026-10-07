@@ -304,6 +304,7 @@ function LinksCard() {
 }
 
 function TodayChoresCard() {
+  const user = useUser()
   const [chores, setChores] = useState<Occurrence[] | null>(null)
   useEffect(() => {
     api<Occurrence[]>(`/api/chores/today?date=${today()}`)
@@ -321,7 +322,7 @@ function TodayChoresCard() {
         <ul>
           {chores?.map((c) => (
             <li key={c.chore_id}>
-              <ChoreCheck chore={c} onChange={(done) => set(c, done)} />
+              <ChoreCheck chore={c} assignee={user} onChange={(done) => set(c, done)} />
             </li>
           ))}
         </ul>

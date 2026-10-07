@@ -12,7 +12,7 @@ const occ = (chore_id: number, title: string, date: string, done = false, assign
   chore_id,
   title,
   date,
-  assignee,
+  assignee_id: assignee.id,
   owner_id: USER.id,
   done,
 })
@@ -27,6 +27,7 @@ const MONTH = {
     occ(6, 'Laundry', '2026-03-14'),
     occ(7, 'Plants', '2026-03-14'),
   ],
+  people: [{ ...EVE, avatar: 'data:image/png;base64,eve' }, ME],
 }
 const CHORES = [
   { id: 3, owner_id: USER.id, title: 'Bins', notes: '', start_date: '2026-03-03', recurrence: 'weekly', end_date: null, assignee: EVE },
@@ -61,6 +62,7 @@ describe('CalendarPage', () => {
     expect(within(tenth).getByText('09:30')).toBeInTheDocument()
     expect(within(tenth).getByText('Dentist')).toBeInTheDocument()
     expect(within(tenth).getByText('Bins').closest('li')).toHaveTextContent('Bins, done')
+    expect(within(tenth).getByText('Bins').closest('li')!.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,eve')
 
     const fourteenth = await day('Saturday, March 14')
     expect(fourteenth).not.toHaveAttribute('aria-current')
@@ -173,5 +175,19 @@ describe('CalendarPage', () => {
     })
     await userEvent.click(card.getByRole('button', { name: 'Delete Bins' }))
     expect(api).toHaveBeenCalledWith('/api/chores/3', { method: 'DELETE' })
+  })
+
+  it('keeps a since-unlinked assignee when editing a chore', async () => {
+    const zed = { id: 8, username: 'zed', avatar: null }
+    setup({ 'GET /api/chores': [{ ...CHORES[0], assignee: zed }], 'PUT /api/chores/3': CHORES[0] })
+    const card = within((await screen.findByRole('heading', { name: 'Chores' })).closest('[data-slot="card"]') as HTMLElement)
+    await userEvent.click(await card.findByRole('button', { name: 'Edit Bins' }))
+    await card.findByRole('option', { name: 'eve' }) // links loaded, zed isn't among them
+    expect(card.getByLabelText('Assignee')).toHaveValue('8')
+    await userEvent.click(card.getByRole('button', { name: 'Save chore' }))
+    expect(api).toHaveBeenCalledWith('/api/chores/3', {
+      method: 'PUT',
+      json: { title: 'Bins', assignee_id: 8, start_date: '2026-03-03', recurrence: 'weekly', end_date: null, notes: '' },
+    })
   })
 })
