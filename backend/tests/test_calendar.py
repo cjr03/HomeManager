@@ -58,6 +58,22 @@ def test_daily_through_leap_day():
     assert out == [D("2028-02-28"), D("2028-02-29"), D("2028-03-01")]
 
 
+def test_weekly_on_several_weekdays():
+    # 2026-03-02 is a Monday; weekdays are Mon=0 .. Sun=6
+    out = occurrences(D("2026-03-02"), "weekly", None, D("2026-03-01"), D("2026-03-08"), [0, 2, 4])
+    assert out == [D("2026-03-02"), D("2026-03-04"), D("2026-03-06")]
+
+
+def test_weekdays_never_fall_before_start():
+    out = occurrences(D("2026-03-04"), "weekly", None, D("2026-03-01"), D("2026-03-10"), [0, 2])
+    assert out == [D("2026-03-04"), D("2026-03-09")]
+
+
+def test_biweekly_on_several_weekdays_skips_alternate_weeks():
+    out = occurrences(D("2026-03-02"), "biweekly", None, D("2026-03-01"), D("2026-03-31"), [1, 3])
+    assert out == [D("2026-03-03"), D("2026-03-05"), D("2026-03-17"), D("2026-03-19"), D("2026-03-31")]
+
+
 def test_end_date_is_inclusive_and_stops_series():
     out = occurrences(D("2026-03-01"), "weekly", D("2026-03-15"), D("2026-03-01"), D("2026-03-31"))
     assert out == [D("2026-03-01"), D("2026-03-08"), D("2026-03-15")]
@@ -217,7 +233,7 @@ def test_chore_crud_and_list(pair):
     ch = r.json()
     assert ch | {"id": 0} == {
         "id": 0, "owner_id": ann.id, "title": "Bins", "notes": "", "start_date": "2026-03-02",
-        "recurrence": "weekly", "end_date": None, "shared": False,
+        "recurrence": "weekly", "weekdays": [], "end_date": None, "shared": False,
         "assignee": {"id": bob.id, "username": "bob", "avatar": None},
     }
     assert [c["id"] for c in ca.get("/api/chores").json()] == [ch["id"]]
@@ -313,6 +329,23 @@ def test_completion_date_must_be_an_occurrence(pair):
     monthly = chore(ca, bob.id, start_date="2026-03-10", recurrence="monthly").json()["id"]
     assert cb.post(f"/api/chores/{monthly}/done/2026-03-31").status_code == 400
     assert cb.post(f"/api/chores/{monthly}/done/2026-04-10").status_code == 204
+
+
+def test_chore_on_several_weekdays(pair):
+    ann, bob, ca, cb = pair
+    r = chore(ca, bob.id, weekdays=[4, 0, 4])  # 2026-03-02 is a Monday
+    assert r.status_code == 201 and r.json()["weekdays"] == [0, 4]
+    dates = [o["date"] for o in ca.get("/api/calendar/2026-03").json()["chores"]][:4]
+    assert dates == ["2026-03-02", "2026-03-06", "2026-03-09", "2026-03-13"]
+    assert ca.post(f"/api/chores/{r.json()['id']}/done/2026-03-06").status_code == 204
+    assert ca.post(f"/api/chores/{r.json()['id']}/done/2026-03-05").status_code == 400
+
+
+def test_chore_weekdays_validation(pair):
+    ann, bob, ca, cb = pair
+    assert chore(ca, bob.id, weekdays=[7]).status_code == 422
+    assert chore(ca, bob.id, weekdays=[-1]).status_code == 422
+    assert chore(ca, bob.id, recurrence="monthly", weekdays=[1]).json()["weekdays"] == []
 
 
 def test_today_lists_my_assigned_occurrences(pair):

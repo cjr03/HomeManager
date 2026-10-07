@@ -1,11 +1,13 @@
 import calendar as cal
 import datetime as dt
+from collections.abc import Sequence
 from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import ForeignKey, String, Text, and_, or_, select
+from sqlalchemy import ForeignKey, SmallInteger, String, Text, and_, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from app.accounts import linked_user_ids
@@ -13,7 +15,6 @@ from app.auth import DB, CurrentUser, User
 from app.db import Base
 
 Recurrence = Literal["none", "daily", "weekly", "biweekly", "monthly"]
-STEP_DAYS = {"daily": 1, "weekly": 7, "biweekly": 14}
 
 
 class Event(Base):
@@ -36,6 +37,7 @@ class Chore(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     start_date: Mapped[date]
     recurrence: Mapped[Recurrence] = mapped_column(String(10))
+    weekdays: Mapped[list[int]] = mapped_column(ARRAY(SmallInteger), default=list, server_default="{}")
     end_date: Mapped[date | None]
     shared: Mapped[bool] = mapped_column(default=False)
     assignee: Mapped[User] = relationship(foreign_keys=[assignee_id], lazy="joined")
@@ -47,8 +49,11 @@ class ChoreCompletion(Base):
     date: Mapped[dt.date] = mapped_column(primary_key=True)
 
 
-def occurrences(start: date, recurrence: Recurrence, end: date | None, range_start: date, range_end: date) -> list[date]:
-    """Dates (inclusive range) on which a chore falls. Monthly keeps the start's day, clamped to short months."""
+def occurrences(
+    start: date, recurrence: Recurrence, end: date | None, range_start: date, range_end: date, weekdays: Sequence[int] = ()
+) -> list[date]:
+    """Dates (inclusive range) on which a chore falls. Monthly keeps the start's day, clamped to short months.
+    Weekly/biweekly fall on `weekdays` (Mon=0), or the start's weekday if empty, counting weeks from the start's week."""
     last = min(range_end, end) if end else range_end
     if recurrence == "none":
         return [start] if range_start <= start <= last else []
@@ -66,10 +71,13 @@ def occurrences(start: date, recurrence: Recurrence, end: date | None, range_sta
             if d >= range_start:
                 out.append(d)
             n += 1
-    step = STEP_DAYS[recurrence]
-    first = start.toordinal() + max(0, -(-(range_start - start).days // step)) * step
     # Ordinals, not date arithmetic, so stepping past 9999-12-31 can't overflow.
-    return [date.fromordinal(o) for o in range(first, last.toordinal() + 1, step)]
+    days = range(max(start, range_start).toordinal(), last.toordinal() + 1)
+    if recurrence == "daily":
+        return [date.fromordinal(o) for o in days]
+    on, weeks = set(weekdays) or {start.weekday()}, 1 if recurrence == "weekly" else 2
+    monday = start.toordinal() - start.weekday()
+    return [date.fromordinal(o) for o in days if (o - monday) % 7 in on and (o - monday) // 7 % weeks == 0]
 
 
 # ---- schemas ----
@@ -96,14 +104,16 @@ class ChoreIn(BaseModel):
     assignee_id: int
     start_date: date
     recurrence: Recurrence
+    weekdays: list[Annotated[int, Field(ge=0, le=6)]] = []
     end_date: date | None = None
     notes: str = ""
     shared: bool = False
 
     @model_validator(mode="after")
-    def _end_after_start(self):
+    def _check(self):
         if self.end_date and self.end_date < self.start_date:
             raise ValueError("End date must be on or after the start date")
+        self.weekdays = sorted(set(self.weekdays)) if self.recurrence in ("weekly", "biweekly") else []
         return self
 
 
@@ -122,6 +132,7 @@ class ChoreOut(BaseModel):
     notes: str
     start_date: date
     recurrence: Recurrence
+    weekdays: list[int]
     end_date: date | None
     shared: bool
     assignee: Person
@@ -180,7 +191,7 @@ def _occurrences(db: Session, chores: list[Chore], start: date, end: date) -> li
             chore_id=c.id, title=c.title, date=d, assignee_id=c.assignee_id, owner_id=c.owner_id, done=(c.id, d) in done
         )
         for c in chores
-        for d in occurrences(c.start_date, c.recurrence, c.end_date, start, end)
+        for d in occurrences(c.start_date, c.recurrence, c.end_date, start, end, c.weekdays)
     ]
     return sorted(out, key=lambda o: o.date)
 
@@ -280,7 +291,7 @@ def delete_chore(chore_id: int, user: CurrentUser, db: DB):
 
 def _occurrence_chore(db: Session, chore_id: int, day: date, user: User) -> Chore:
     ch = _visible_chore(db, chore_id, user)
-    if not occurrences(ch.start_date, ch.recurrence, ch.end_date, day, day):
+    if not occurrences(ch.start_date, ch.recurrence, ch.end_date, day, day, ch.weekdays):
         raise HTTPException(400, "The chore isn't due on that date")
     return ch
 
