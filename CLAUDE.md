@@ -35,7 +35,8 @@ frontend/e2e/              Playwright specs
 ## Commands
 - Backend: `cd backend && .venv/bin/pytest -q` (local test DB: `postgresql+psycopg:///homemanager_test`, override with `TEST_DATABASE_URL`)
 - Backend dev: `cd backend && .venv/bin/uvicorn app.main:app --reload`
-- Frontend: `cd frontend && npm test` (vitest), `npm run build`, `npm run e2e` (Playwright, starts both servers)
+- Frontend: `cd frontend && npm test` (vitest), `npm run build`, `npm run e2e` (Playwright, starts both servers).
+  In a parallel worktree, set unique `API_PORT`/`WEB_PORT` and an own `E2E_DATABASE_URL`/`TEST_DATABASE_URL` DB.
 
 ## Workflow (every component)
 TDD on its own branch `feat/<name>`: write failing tests, implement, all green locally
