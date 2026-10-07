@@ -87,7 +87,7 @@ describe('CalendarPage', () => {
     const dialog = screen.getByRole('dialog', { name: 'Saturday, March 14' })
     expect(within(dialog).getByRole('checkbox', { name: 'Plants' })).toBeInTheDocument()
     expect(within(dialog).getByText('Bring cake')).toBeInTheDocument()
-    expect(within(dialog).getByText('Shared by eve')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Shared by eve')).toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: 'Edit Party' })).not.toBeInTheDocument()
   })
 
@@ -134,6 +134,7 @@ describe('CalendarPage', () => {
     await userEvent.click(card.getByRole('button', { name: 'New chore' }))
     expect(card.getByLabelText('Starts')).toHaveValue('2026-03-10')
     expect(card.getByRole('option', { name: 'You (ann)' })).toBeInTheDocument()
+    await card.findByRole('option', { name: 'eve' }) // linked accounts load separately
     await userEvent.type(card.getByLabelText('Title'), 'Mop')
     await userEvent.selectOptions(card.getByLabelText('Assignee'), 'eve')
     await userEvent.selectOptions(card.getByLabelText('Repeats'), 'Every week')
