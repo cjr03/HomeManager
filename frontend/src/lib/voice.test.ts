@@ -1,14 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { pickVoice, prime, RATE, speak } from '@/lib/voice'
+import { pickVoice, prime, RATE, speak, spellMikayla } from '@/lib/voice'
 
 const voice = (name: string, lang = 'en-US') => ({ name, lang }) as SpeechSynthesisVoice
 
 describe('pickVoice', () => {
-  it('prefers a clear US English voice, then any US English one', () => {
-    expect(pickVoice([voice('Fred'), voice('Samantha'), voice('Ava (Premium)')])?.name).toBe('Ava (Premium)')
-    expect(pickVoice([voice('Amélie', 'fr-FR'), voice('Fred'), voice('Samantha')])?.name).toBe('Samantha')
-    expect(pickVoice([voice('Daniel', 'en-GB'), voice('Fred', 'en_US')])?.name).toBe('Fred')
-    expect(pickVoice([voice('Amélie', 'fr-FR')])).toBeUndefined()
+  it("picks the most human-sounding US English woman's voice, never a man's", () => {
+    // What Chrome on macOS offers without downloads: Google's voice beats Samantha.
+    expect(pickVoice([voice('Fred'), voice('Samantha'), voice('Kathy'), voice('Google US English')])?.name).toBe('Google US English')
+    expect(pickVoice([voice('Samantha'), voice('Google US English'), voice('Ava (Premium)')])?.name).toBe('Ava (Premium)')
+    expect(pickVoice([voice('Microsoft David'), voice('Microsoft Aria Online (Natural) - English (United States)')])?.name).toContain('Aria')
+    expect(pickVoice([voice('Amélie', 'fr-FR'), voice('Fred'), voice('Samantha', 'en_US')])?.name).toBe('Samantha')
+    expect(pickVoice([voice('Microsoft David - English (United States)'), voice('Microsoft Zira - English (United States)')])?.name).toContain('Zira')
+    expect(pickVoice([voice('Daniel', 'en-GB'), voice('Fred'), voice('Ava', 'en-GB')])).toBeUndefined()
+  })
+})
+
+describe('spellMikayla', () => {
+  it('spells her name right however recognition heard it, leaving other words alone', () => {
+    expect(spellMikayla('Hey Michaela, what about mikaela and Makayla? Ask Michael.')).toBe('Hey Mikayla, what about Mikayla and Mikayla? Ask Michael.')
+    expect(spellMikayla('Mikayla, add milk')).toBe('Mikayla, add milk')
   })
 })
 
