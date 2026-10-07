@@ -277,7 +277,17 @@ def test_budget_shared_line_uses_context_partner(auth_client, llm, make_user, db
     client = llm(turn("ok"))
     ask(auth_client, "budget", month="2026-10", partner_id=bob.id)
     assert "Groceries" in client.calls[0]["system"] and "this month's plan" in client.calls[0]["system"].lower()
-    assert "shown at half their amount" in client.calls[0]["system"]
+    assert "user_share" in client.calls[0]["system"]
+
+
+def test_budget_update_keeps_the_split(auth_client, llm, make_user, db):
+    bob = make_user()
+    link(db, auth_client.user, bob)
+    body = {"kind": "expense", "name": "Rent", "a": "1000", "user_share": 70, "partner_share": 30}
+    line = auth_client.post(f"/api/budget/2026-10/shared/{bob.id}/lines", json=body).json()
+    run_tools(auth_client, llm, "budget", tool("update_budget_line", line_id=line["id"], name="Rent", a="1200"), month="2026-10")
+    [saved] = auth_client.get(f"/api/budget/2026-10/shared/{bob.id}").json()["lines"]
+    assert (saved["a"], saved["user_share"], saved["partner_share"]) == ("1200.00", 70, 30)
 
 
 # ---- calendar ----

@@ -180,7 +180,10 @@ def _add_line(inp: AddLine, s) -> str:
 
 
 def _update_line(inp: UpdateLine, s) -> str:
-    return _line(budget.update_line(inp.line_id, budget.LineUpdate(**inp.model_dump(exclude={"line_id"})), s.user, s.db))
+    line = budget._own_line(s.db, inp.line_id, s.user)
+    # Shares the model leaves out keep their values; LineUpdate's 50/50 defaults would reset a custom split.
+    body = {"user_share": line.user_share, "partner_share": line.partner_share} | inp.model_dump(exclude_unset=True)
+    return _line(budget.update_line(inp.line_id, budget.LineUpdate(**body), s.user, s.db))
 
 
 def _delete_line(inp: LineRef, s) -> str:
@@ -336,9 +339,10 @@ Budget lines have a kind, a name and amounts a and b (b is optional):
 savings (a = budgeted, b = actual).
 - "What you own": asset (a = value), debit (a = balance on day 1, b = balance on the last day).
 - "What you owe": loan (a = amount owed), credit (a = balance on day 1, b = balance on the last day).
-Only debit and credit amounts may be negative. Lines in shared_with_partner are split between the pair; \
-set shared_with_partner to add one there. In personal, lines with a partner_id are shared and shown at half their \
-amount; their full amount is twice that, and update_budget_line takes full amounts.""",
+Only debit and credit amounts may be negative. Lines in shared_with_partner are split between the pair: the line's \
+owner (owner_id) carries user_share percent and the partner partner_share percent; set shared_with_partner to add \
+one there. In personal, lines with a partner_id are shared and shown at only the user's share of the amount; \
+update_budget_line takes full amounts, and its shares are optional (left out = unchanged).""",
     "calendar": "Chores repeat by recurrence (weekdays are 0 = Monday ... 6 = Sunday, for weekly/biweekly). "
     "Assign chores only to someone in people. Events, tasks and chore occurrences can each be marked done.",
     "account": "This is the user's account page with today's chores and their preferences. "
