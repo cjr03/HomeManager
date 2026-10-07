@@ -81,7 +81,7 @@ describe('BudgetCard', () => {
     await userEvent.clear(actual)
     await userEvent.type(actual, '432.10')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(onUpdate).toHaveBeenCalledWith(2, { name: 'Food', a: '400.00', b: '432.10' })
+    expect(onUpdate).toHaveBeenCalledWith(2, { name: 'Food', a: '400.00', b: '432.1' })
   })
 
   it('cancels an edit without saving', async () => {

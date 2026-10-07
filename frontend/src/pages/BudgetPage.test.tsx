@@ -40,7 +40,9 @@ function setup(routes: Record<string, unknown>) {
 const overview = async () => within(await screen.findByRole('region', { name: 'Overview' }))
 
 describe('BudgetPage', () => {
-  beforeEach(() => vi.mocked(api).mockReset())
+  beforeEach(() => {
+    vi.mocked(api).mockReset()
+  })
 
   it('renders the overview band from the summary', async () => {
     setup({ [`GET /api/budget/${M}`]: MINE })
@@ -51,7 +53,7 @@ describe('BudgetPage', () => {
     expect(o.getByText('+$100.00').closest('[data-tone]')).toHaveAttribute('data-tone', 'good')
     expect(o.getByText('$5,000.00')).toBeInTheDocument()
     expect(o.getByText('$3,800.00')).toBeInTheDocument()
-    expect(screen.getByText('Better than planned')).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: 'Legend' })).getByText('Needs attention')).toBeInTheDocument()
     for (const name of ['What you own', 'What you owe', "This month's plan"])
       expect(screen.getByRole('heading', { name })).toBeInTheDocument()
     expect(screen.getByRole('listitem', { name: 'Rent' })).toBeInTheDocument()

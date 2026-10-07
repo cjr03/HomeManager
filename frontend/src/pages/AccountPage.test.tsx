@@ -99,7 +99,7 @@ describe('AccountPage', () => {
     })
     const card = (await screen.findByRole('heading', { name: 'Linked accounts' })).closest('[data-slot="card"]')!
     const c = within(card as HTMLElement)
-    expect(c.getByText('cat')).toBeInTheDocument()
+    expect(await c.findByText('cat')).toBeInTheDocument()
     expect(c.getByText('dan')).toBeInTheDocument()
     expect(c.getByText('eve')).toBeInTheDocument()
 
