@@ -46,10 +46,13 @@ def week_dates(week_start: date) -> list[date]:
     return [week_start + timedelta(days=i) for i in range(7)]
 
 
+def _by_day(e: MealEntry):
+    return e.date, list(Slot).index(Slot(e.slot))
+
+
 def day_plans(entries: list[MealEntry]) -> list[DayPlan]:
     """Entries -> one DayPlan per day that has meals, in date order, slots in Slot order."""
-    order = list(Slot)
-    entries = sorted(entries, key=lambda e: (e.date, order.index(Slot(e.slot))))
+    entries = sorted(entries, key=_by_day)
     return [
         DayPlan(weekday=WEEKDAYS[day.weekday()], meals=[PlannedMeal(slot=e.slot, name=e.name) for e in group])
         for day, group in groupby(entries, key=lambda e: e.date)
@@ -198,4 +201,4 @@ def generate(body: GenerateIn, user: CurrentUser, db: DB, ag: Agents):
         if body.overwrite or (dates[day.weekday], meal.slot) not in filled
     ]
     db.commit()
-    return sorted(saved, key=lambda e: (e.date, list(Slot).index(Slot(e.slot))))
+    return sorted(saved, key=_by_day)

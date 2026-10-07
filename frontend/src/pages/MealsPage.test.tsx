@@ -46,7 +46,7 @@ describe('MealsPage', () => {
   it('shows the month with meals in their day cells and today highlighted', async () => {
     setup()
     const day = await screen.findByRole('button', { name: 'Tuesday, October 6' })
-    expect(within(day).getByText('Spaghetti bolognese')).toBeInTheDocument()
+    expect(await within(day).findByText('Spaghetti bolognese')).toBeInTheDocument()
     expect(within(day).getByText('Porridge')).toBeInTheDocument()
     expect(day).toHaveAttribute('aria-current', 'date')
     expect(screen.getByRole('heading', { name: 'October 2026' })).toBeInTheDocument()
@@ -160,7 +160,7 @@ describe('MealsPage', () => {
       expect(onion).toBeChecked()
 
       await userEvent.click(within(card).getByRole('button', { name: 'Copy' }))
-      expect(writeText).toHaveBeenCalledWith('Pantry\n- 500 g Spaghetti\n\nProduce\n- 2 Onion\n- 1 Garlic')
+      expect(writeText).toHaveBeenCalledWith('Produce\n- 2 Onion\n- 1 Garlic\n\nPantry\n- 500 g Spaghetti')
       expect(screen.getByRole('region', { name: 'Groceries needed' })).toHaveTextContent('500 g Spaghetti')
     })
 

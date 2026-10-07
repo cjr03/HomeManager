@@ -40,8 +40,9 @@ test('plan a week: pantry, generate, edit a meal, build the shopping list', asyn
   // Open the day: recipe details, then rename dinner.
   await bolognese.click()
   const day = page.getByRole('dialog')
+  await day.getByText('Dinner recipe').click()
   await expect(day.getByText('Dice the onion and soften it in olive oil for 5 minutes.')).toBeVisible()
-  await day.getByLabel('Dinner').fill('Family lasagne')
+  await day.getByLabel('Dinner', { exact: true }).fill('Family lasagne')
   await day.getByRole('button', { name: 'Save' }).click()
   await expect(day).toBeHidden()
   await expect(grid.getByText('Family lasagne')).toBeVisible()

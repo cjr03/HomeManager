@@ -36,6 +36,10 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-slot-breakfast: var(--slot-breakfast);
+  --color-slot-lunch: var(--slot-lunch);
+  --color-slot-dinner: var(--slot-dinner);
+  --color-slot-snack: var(--slot-snack);
 }
 
 /*
@@ -64,6 +68,11 @@
   --border: #dce4dd;
   --input: #d2dcd4;
   --ring: #2e6a55;
+  /* Meal slots: saffron morning, leafy lunch, tomato dinner, blueberry snack. */
+  --slot-breakfast: #c98a12;
+  --slot-lunch: #3f8a5f;
+  --slot-dinner: #c0533b;
+  --slot-snack: #5b7fab;
   --float-shadow: 0 1px 2px rgb(29 42 37 / 0.05), 0 14px 36px -14px rgb(29 62 50 / 0.22);
   --page-wash:
     radial-gradient(60rem 40rem at 0% -10%, rgb(46 106 85 / 0.12), transparent 60%),
@@ -93,6 +102,10 @@
     --border: rgb(255 255 255 / 0.08);
     --input: rgb(255 255 255 / 0.14);
     --ring: #7cc6a8;
+    --slot-breakfast: #e9b04a;
+    --slot-lunch: #7cc6a8;
+    --slot-dinner: #ef8a73;
+    --slot-snack: #93b3d8;
     --float-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 18px 40px -16px rgb(0 0 0 / 0.6);
     --page-wash:
       radial-gradient(60rem 40rem at 0% -10%, rgb(124 198 168 / 0.10), transparent 60%),
