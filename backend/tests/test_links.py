@@ -63,6 +63,18 @@ def test_request_duplicate_either_direction_409(make_user, client_for):
     assert request_link(cb, "ann").status_code == 409
 
 
+def test_request_race_is_409(db, make_user, client_for, monkeypatch):
+    ann, bob = make_user("ann"), make_user("bob")
+    db.add(Link(requester=bob, addressee=ann))
+    db.flush()
+    # Simulate a concurrent request: the duplicate-link lookup sees nothing, so uq_links_pair decides.
+    scalar = db.scalar
+    monkeypatch.setattr(db, "scalar", lambda stmt, *a, **k: None if "links" in str(stmt) else scalar(stmt, *a, **k))
+    r = request_link(client_for(ann), "bob")
+    assert r.status_code == 409
+    assert r.json()["detail"] == "A link with that user already exists"
+
+
 def test_delete_link_by_either_party(make_user, client_for):
     ann, bob, eve = make_user("ann"), make_user("bob"), make_user("eve")
     ca, cb, ce = client_for(ann), client_for(bob), client_for(eve)

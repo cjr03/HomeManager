@@ -8,6 +8,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pwdlib import PasswordHash
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import Index, String, Text, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -171,7 +172,12 @@ def signup(body: SignupIn, response: Response, db: DB):
         preferences=body.preferences.model_dump(mode="json"),
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:  # lost a race with a concurrent signup
+        db.rollback()
+        taken = e.orig.diag.constraint_name == "uq_users_username_lower"
+        raise HTTPException(409, "Username already taken" if taken else "Email already registered")
     _set_session(response, user)
     return user
 

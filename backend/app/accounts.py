@@ -4,6 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, UploadFile
 from pydantic import BaseModel, model_validator
 from sqlalchemy import ForeignKey, Index, String, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from app.auth import DB, CurrentUser, Password, ProfileIn, User, UserOut, find_user, hash_password, verify_password
@@ -158,7 +159,11 @@ def request_link(body: LinkIn, user: CurrentUser, db: DB):
         raise HTTPException(409, "A link with that user already exists")
     link = Link(requester=user, addressee=other)
     db.add(link)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:  # lost a race with a concurrent request between the same pair
+        db.rollback()
+        raise HTTPException(409, "A link with that user already exists")
     return _link_out(link, user)
 
 

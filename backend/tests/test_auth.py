@@ -172,6 +172,27 @@ def test_signup_duplicate_email(client, make_user):
     assert r.json()["detail"] == "Email already registered"
 
 
+def _skip_existence_checks(monkeypatch, db):
+    """Simulate a concurrent signup: the pre-insert lookups see nothing, so the DB constraint decides."""
+    monkeypatch.setattr(db, "scalar", lambda *a, **k: None)
+
+
+def test_signup_username_race_is_409(client, db, make_user, monkeypatch):
+    make_user("ann_1", email="other@example.com")
+    _skip_existence_checks(monkeypatch, db)
+    r = client.post("/api/auth/signup", json=signup_body())
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Username already taken"
+
+
+def test_signup_email_race_is_409(client, db, make_user, monkeypatch):
+    make_user("someone", email="ann@example.com")
+    _skip_existence_checks(monkeypatch, db)
+    r = client.post("/api/auth/signup", json=signup_body())
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Email already registered"
+
+
 # ---- API: login / logout ----
 
 def test_login_success_sets_cookie(client, make_user):

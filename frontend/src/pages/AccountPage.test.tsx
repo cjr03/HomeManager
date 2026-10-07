@@ -114,4 +114,53 @@ describe('AccountPage', () => {
     await userEvent.click(c.getByRole('button', { name: 'Unlink eve' }))
     expect(api).toHaveBeenCalledWith('/api/links/9', { method: 'DELETE' })
   })
+  it('declines an incoming link request', async () => {
+    setup({ 'DELETE /api/links/7': undefined })
+    await userEvent.click(await screen.findByRole('button', { name: 'Decline cat' }))
+    expect(api).toHaveBeenCalledWith('/api/links/7', { method: 'DELETE' })
+  })
+
+  describe('avatar', () => {
+    const png = (bytes: number) => new File([new Uint8Array(bytes)], 'me.png', { type: 'image/png' })
+
+    beforeEach(() => {
+      URL.createObjectURL = vi.fn(() => 'blob:preview')
+      URL.revokeObjectURL = vi.fn()
+    })
+
+    it('rejects images over 1 MB without uploading', async () => {
+      setup()
+      await userEvent.upload(await screen.findByLabelText('Upload photo'), png(1024 * 1024 + 1))
+      expect(screen.queryByRole('button', { name: 'Save photo' })).not.toBeInTheDocument()
+      expect(URL.createObjectURL).not.toHaveBeenCalled()
+      expect(api).not.toHaveBeenCalledWith('/api/me/avatar', expect.anything())
+    })
+
+    it('previews, then uploads the photo as multipart form data', async () => {
+      setup({ 'POST /api/me/avatar': undefined })
+      const file = png(10)
+      await userEvent.upload(await screen.findByLabelText('Upload photo'), file)
+      await userEvent.click(screen.getByRole('button', { name: 'Save photo' }))
+      expect(api).toHaveBeenCalledWith('/api/me/avatar', { method: 'POST', body: expect.any(FormData) })
+      const call = vi.mocked(api).mock.calls.find(([path]) => path === '/api/me/avatar')!
+      expect((call[1]!.body as FormData).get('file')).toBe(file)
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+    })
+
+    it('cancels a preview without uploading', async () => {
+      setup()
+      await userEvent.upload(await screen.findByLabelText('Upload photo'), png(10))
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+      expect(screen.getByLabelText('Upload photo')).toBeInTheDocument()
+      expect(api).not.toHaveBeenCalledWith('/api/me/avatar', expect.anything())
+    })
+
+    it('removes the current photo', async () => {
+      mockApi({ 'GET /api/me': { ...USER, avatar: 'data:image/png;base64,AA==' }, 'GET /api/links': LINKS, 'DELETE /api/me/avatar': undefined })
+      renderAt('/account')
+      await userEvent.click(await screen.findByRole('button', { name: 'Remove' }))
+      expect(api).toHaveBeenCalledWith('/api/me/avatar', { method: 'DELETE' })
+    })
+  })
 })
