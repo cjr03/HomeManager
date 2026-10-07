@@ -26,6 +26,7 @@ type Chore = {
   notes: string
   start_date: string
   recurrence: Recurrence
+  weekdays: number[] // Mon=0; empty means the start's weekday
   end_date: string | null
   shared: boolean
   assignee: Person
@@ -39,10 +40,12 @@ const REPEATS: [Recurrence, string][] = [
   ['monthly', 'Every month'],
 ]
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAYS_FROM_MONDAY = [...WEEKDAYS.slice(1), WEEKDAYS[0]] // indexed like the API's weekdays
 const MAX_IN_CELL = 3
 
 const longDay = (d: string) => formatDay(d, { weekday: 'long', month: 'long', day: 'numeric' })
 const shortDay = (d: string) => formatDay(d, { month: 'short', day: 'numeric' })
+const weekdayOf = (d: string) => (new Date(`${d}T00:00`).getDay() + 6) % 7
 const hhmm = (t: string | null) => t?.slice(0, 5) ?? ''
 const selectClass =
   'h-9 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 dark:scheme-dark [&>option]:bg-popover'
@@ -50,7 +53,8 @@ const selectClass =
 function describeChore(c: Chore) {
   if (c.recurrence === 'none') return `Once on ${shortDay(c.start_date)}`
   const every = REPEATS.find(([r]) => r === c.recurrence)![1]
-  return `${every} from ${shortDay(c.start_date)}${c.end_date ? ` until ${shortDay(c.end_date)}` : ''}`
+  const on = c.weekdays.length ? ` on ${c.weekdays.map((d) => DAYS_FROM_MONDAY[d]).join(', ')}` : ''
+  return `${every}${on} from ${shortDay(c.start_date)}${c.end_date ? ` until ${shortDay(c.end_date)}` : ''}`
 }
 
 // ---- month grid ----
@@ -326,11 +330,15 @@ function ChoreForm({ chore, people, onDone }: { chore: Chore | null; people: Per
     assignee_id: chore?.assignee.id ?? me.id,
     start_date: chore?.start_date ?? today(),
     recurrence: chore?.recurrence ?? ('none' as Recurrence),
+    weekdays: chore?.weekdays ?? [],
     end_date: chore?.end_date ?? '',
     notes: chore?.notes ?? '',
     shared: chore?.shared ?? false,
   })
   const [error, setError] = useState('')
+  const onDays = form.weekdays.length || !form.start_date ? form.weekdays : [weekdayOf(form.start_date)]
+  const toggleDay = (d: number) =>
+    setForm({ ...form, weekdays: onDays.includes(d) ? onDays.filter((x) => x !== d) : [...onDays, d].sort() })
   // Keep a since-unlinked assignee selectable so editing doesn't silently reassign.
   const assignees = [...people, ...(chore && chore.assignee.id !== me.id && !people.some((p) => p.id === chore.assignee.id) ? [chore.assignee] : [])]
 
@@ -393,6 +401,22 @@ function ChoreForm({ chore, people, onDone }: { chore: Chore | null; people: Per
           onChange={(e) => setForm({ ...form, end_date: e.target.value })}
         />
       </div>
+      {(form.recurrence === 'weekly' || form.recurrence === 'biweekly') && (
+        <fieldset className="space-y-1.5">
+          <legend className="text-sm leading-none font-medium">On</legend>
+          <div className="flex flex-wrap gap-1.5">
+            {DAYS_FROM_MONDAY.map((name, d) => (
+              <label
+                key={name}
+                className="cursor-pointer rounded-full border border-input px-3 py-1 text-sm transition-colors select-none has-checked:border-primary has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50"
+              >
+                <input type="checkbox" className="sr-only" checked={onDays.includes(d)} onChange={() => toggleDay(d)} />
+                {name}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="chore-notes">Notes</Label>
         <Textarea id="chore-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />

@@ -30,7 +30,7 @@ const MONTH = {
   people: [{ ...EVE, avatar: 'data:image/png;base64,eve' }, ME],
 }
 const CHORES = [
-  { id: 3, owner_id: USER.id, title: 'Bins', notes: '', start_date: '2026-03-03', recurrence: 'weekly', end_date: null, shared: false, assignee: EVE },
+  { id: 3, owner_id: USER.id, title: 'Bins', notes: '', start_date: '2026-03-03', recurrence: 'weekly', weekdays: [], end_date: null, shared: false, assignee: EVE },
 ]
 const LINKS = { incoming: [], outgoing: [], linked: [{ id: 9, user_id: 5, username: 'eve', avatar: null }] }
 
@@ -59,7 +59,7 @@ describe('CalendarPage', () => {
     setup()
     const tenth = await day('Tuesday, March 10')
     expect(tenth).toHaveAttribute('aria-current', 'date')
-    expect(within(tenth).getByText('09:30')).toBeInTheDocument()
+    expect(await within(tenth).findByText('09:30')).toBeInTheDocument() // the grid renders before the month loads
     expect(within(tenth).getByText('Dentist')).toBeInTheDocument()
     expect(within(tenth).getByText('Bins').closest('li')).toHaveTextContent('Bins, done')
     expect(within(tenth).getByText('Bins').closest('li')!.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,eve')
@@ -139,13 +139,16 @@ describe('CalendarPage', () => {
     await card.findByRole('option', { name: 'eve' }) // linked accounts load separately
     await userEvent.type(card.getByLabelText('Title'), 'Mop')
     await userEvent.selectOptions(card.getByLabelText('Assignee'), 'eve')
+    expect(card.queryByRole('checkbox', { name: 'Tue' })).not.toBeInTheDocument()
     await userEvent.selectOptions(card.getByLabelText('Repeats'), 'Every week')
+    expect(card.getByRole('checkbox', { name: 'Tue' })).toBeChecked() // the start's weekday
+    await userEvent.click(card.getByRole('checkbox', { name: 'Thu' }))
     await userEvent.type(card.getByLabelText('Ends (optional)'), '2026-06-30')
     await userEvent.click(card.getByLabelText('Share with linked accounts'))
     await userEvent.click(card.getByRole('button', { name: 'Save chore' }))
     expect(api).toHaveBeenCalledWith('/api/chores', {
       method: 'POST',
-      json: { title: 'Mop', assignee_id: 5, start_date: '2026-03-10', recurrence: 'weekly', end_date: '2026-06-30', notes: '', shared: true },
+      json: { title: 'Mop', assignee_id: 5, start_date: '2026-03-10', recurrence: 'weekly', weekdays: [1, 3], end_date: '2026-06-30', notes: '', shared: true },
     })
   })
 
@@ -172,10 +175,15 @@ describe('CalendarPage', () => {
     await userEvent.click(card.getByRole('button', { name: 'Save chore' }))
     expect(api).toHaveBeenCalledWith('/api/chores/3', {
       method: 'PUT',
-      json: { title: 'Bins', assignee_id: 5, start_date: '2026-03-03', recurrence: 'monthly', end_date: null, notes: '', shared: false },
+      json: { title: 'Bins', assignee_id: 5, start_date: '2026-03-03', recurrence: 'monthly', weekdays: [], end_date: null, notes: '', shared: false },
     })
     await userEvent.click(card.getByRole('button', { name: 'Delete Bins' }))
     expect(api).toHaveBeenCalledWith('/api/chores/3', { method: 'DELETE' })
+  })
+
+  it('describes a chore on several weekdays', async () => {
+    setup({ 'GET /api/chores': [{ ...CHORES[0], weekdays: [0, 3] }] })
+    expect(await screen.findByText('Every week on Mon, Thu from Mar 3')).toBeInTheDocument()
   })
 
   it('keeps a since-unlinked assignee when editing a chore', async () => {
@@ -188,7 +196,7 @@ describe('CalendarPage', () => {
     await userEvent.click(card.getByRole('button', { name: 'Save chore' }))
     expect(api).toHaveBeenCalledWith('/api/chores/3', {
       method: 'PUT',
-      json: { title: 'Bins', assignee_id: 8, start_date: '2026-03-03', recurrence: 'weekly', end_date: null, notes: '', shared: false },
+      json: { title: 'Bins', assignee_id: 8, start_date: '2026-03-03', recurrence: 'weekly', weekdays: [], end_date: null, notes: '', shared: false },
     })
   })
 

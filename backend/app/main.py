@@ -13,6 +13,7 @@ async def lifespan(_: FastAPI):
     # ponytail: hand-written column add until Alembic lands; create_all skips columns on existing tables.
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE chores ADD COLUMN IF NOT EXISTS shared boolean NOT NULL DEFAULT false"))
+        conn.execute(text("ALTER TABLE chores ADD COLUMN IF NOT EXISTS weekdays smallint[] NOT NULL DEFAULT '{}'"))
     yield
 
 
