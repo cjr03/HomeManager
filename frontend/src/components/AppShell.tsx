@@ -1,5 +1,8 @@
-import { CalendarDays, CircleUser, House, PiggyBank, UtensilsCrossed } from 'lucide-react'
+import { CalendarDays, CircleUser, House, LogOut, PiggyBank, UtensilsCrossed } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
+import { UserAvatar } from '@/components/UserAvatar'
+import { Button } from '@/components/ui/button'
+import { useAuth, useUser } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 const links = [
@@ -10,6 +13,8 @@ const links = [
 ]
 
 export function AppShell() {
+  const user = useUser()
+  const { logout } = useAuth()
   return (
     <div className="min-h-svh pb-28 sm:pb-0">
       <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-5 sm:px-6">
@@ -39,6 +44,19 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
+        <div className="flex items-center gap-1">
+          <Link
+            to="/account"
+            aria-label={`Signed in as ${user.username}`}
+            className="flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-sm font-medium transition-colors hover:bg-accent"
+          >
+            <UserAvatar username={user.username} avatar={user.avatar} className="size-8" />
+            <span className="hidden md:inline">{user.username}</span>
+          </Link>
+          <Button variant="ghost" size="icon" className="rounded-full" aria-label="Log out" title="Log out" onClick={logout}>
+            <LogOut />
+          </Button>
+        </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
         <Outlet />
