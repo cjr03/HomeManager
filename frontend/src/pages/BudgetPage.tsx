@@ -1,5 +1,5 @@
 import { CircleAlert, CircleCheck, Copy } from 'lucide-react'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { BudgetCard, Delta, money, TONE_LABEL, type Kind, type Line, type LineInput, type Member, type Summary } from '@/components/BudgetCard'
 import { errorText, FormError } from '@/components/Field'
@@ -48,7 +48,7 @@ function Overview({ summary: s }: { summary: Summary }) {
   return (
     <section aria-label="Overview" className="space-y-3">
       <Card className="grid gap-0 divide-y py-0 lg:grid-cols-[1.3fr_1fr_1fr] lg:divide-x lg:divide-y-0">
-        <div className="flex flex-col justify-between gap-6 rounded-t-2xl bg-accent/60 p-6 lg:rounded-l-2xl lg:rounded-tr-none">
+        <div role="group" aria-label="Net worth" className="flex flex-col justify-between gap-6 rounded-t-2xl bg-accent/60 p-6 lg:rounded-l-2xl lg:rounded-tr-none">
           <div>
             <h2 className="font-semibold text-accent-foreground">Net worth</h2>
             <p className="text-sm text-muted-foreground">What you own minus what you owe, at month end</p>
@@ -138,25 +138,24 @@ export function BudgetPage() {
   const [data, setData] = useState<MonthData | SharedData | null>(null)
   const [copyError, setCopyError] = useState('')
   const path = view === 'mine' ? `/api/budget/${month}` : `/api/budget/${month}/shared/${view}`
-  const load = useCallback(() => api<MonthData | SharedData>(path), [path])
+  // The path on screen. Responses that land after the user moved to another month or view are dropped.
+  const shown = useRef(path)
+  const show = (from: string, d: MonthData | SharedData) => shown.current === from && setData(d)
 
   useEffect(() => void api<{ linked: LinkEntry[] }>('/api/links').then((l) => setLinked(l.linked), () => {}), [])
   useEffect(() => {
-    let live = true
+    shown.current = path
     setCopyError('')
-    load().then(
-      (d) => live && setData(d),
+    api<MonthData | SharedData>(path).then(
+      (d) => show(path, d),
       (err) => toast.error(errorText(err)),
     )
-    return () => {
-      live = false
-    }
-  }, [load])
+  }, [path])
 
   async function run(action: () => Promise<unknown>) {
     try {
       await action()
-      setData(await load())
+      show(path, await api<MonthData>(path))
     } catch (err) {
       toast.error(errorText(err))
     }
@@ -164,7 +163,7 @@ export function BudgetPage() {
 
   async function copyPrevious() {
     try {
-      setData(await api<MonthData>(`/api/budget/${month}/copy-previous`, { method: 'POST' }))
+      show(path, await api<MonthData>(`/api/budget/${month}/copy-previous`, { method: 'POST' }))
     } catch (err) {
       setCopyError(errorText(err))
     }

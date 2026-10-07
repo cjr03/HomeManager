@@ -186,6 +186,16 @@ def _previous(month: str) -> str:
     return f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
 
 
+def _carry_over(s: BudgetLine, month: str) -> BudgetLine:
+    """Plans and income carry over; actuals start empty and month-end balances become the new day-1 balances."""
+    a, b = s.a, s.b
+    if s.kind in BALANCES:
+        a, b = (a if b is None else b), None
+    elif s.kind != Kind.income:
+        b = None
+    return BudgetLine(user_id=s.user_id, month=month, kind=s.kind, name=s.name, a=a, b=b, position=s.position)
+
+
 router = APIRouter(prefix="/api/budget", tags=["budget"])
 
 
@@ -226,10 +236,7 @@ def copy_previous(month: Month, user: CurrentUser, db: DB):
     source = _lines(db, [user.id], _previous(month))
     if not source:
         raise HTTPException(404, "Last month has nothing to copy")
-    db.add_all(
-        BudgetLine(user_id=user.id, month=month, kind=s.kind, name=s.name, a=s.a, b=s.b, position=s.position)
-        for s in source
-    )
+    db.add_all(_carry_over(s, month) for s in source)
     db.commit()
     return _month_out(db, user, month)
 

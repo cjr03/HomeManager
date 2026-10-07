@@ -1,8 +1,8 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
+import { currentMonth } from '../src/lib/month.ts'
 
 const unique = (p: string) => `${p}_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`
-const now = new Date()
-const MONTH = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+const MONTH = currentMonth()
 
 // The signup UI is covered by auth.spec.ts; here we sign up through the API to get straight to the budget.
 async function newUser(browser: Browser, username = unique('bud')) {
@@ -32,13 +32,17 @@ test('budget a month, watch the overview update, then copy it into next month', 
   await addLine(page, 'income', { Name: 'Salary', 'Pre-tax': '5000', 'Post-tax': '3800' })
   await addLine(page, 'expense', { Name: 'Rent', Budgeted: '1500', Actual: '1400' })
   await addLine(page, 'savings', { Name: 'Holiday', Budgeted: '300', Actual: '300' })
+  const netWorth = overview.getByRole('group', { name: 'Net worth' })
   await addLine(page, 'asset', { Name: 'Car', Value: '9000' })
+  await expect(netWorth).toContainText('$9,000.00')
+  await addLine(page, 'loan', { Name: 'Mortgage', 'Amount owed': '4000' })
 
   // remainder: 3800 - 1500 - 300 = 2000 budgeted, 3800 - 1400 - 300 = 2100 actual
   await expect(overview).toContainText('$2,000.00')
   await expect(overview).toContainText('$2,100.00')
   await expect(overview).toContainText('+$100.00')
-  await expect(overview.getByText('$9,000.00', { exact: true }).first()).toBeVisible()
+  // net worth = 9000 owned - 4000 owed; no other figure in the tile is 5000
+  await expect(netWorth.getByText('$5,000.00', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Edit Rent' }).click()
   await page.getByLabel('Actual').fill('1600')

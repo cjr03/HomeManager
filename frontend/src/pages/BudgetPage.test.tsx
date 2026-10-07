@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '@/lib/api'
-import { currentMonth } from '@/lib/month'
+import { currentMonth, shiftMonth } from '@/lib/month'
 import { USER, mockApi, renderAt } from '@/test-utils'
 
 vi.mock('@/lib/api', async (orig) => ({ ...(await orig<typeof import('@/lib/api')>()), api: vi.fn() }))
@@ -86,6 +86,23 @@ describe('BudgetPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete Rent' }))
     expect(api).toHaveBeenCalledWith('/api/budget/lines/2', { method: 'DELETE' })
     expect(vi.mocked(api).mock.calls.filter(([p]) => p === `/api/budget/${M}`).length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('ignores a reload for a month the user has already left', async () => {
+    let finishDelete = () => {}
+    setup({
+      [`GET /api/budget/${M}`]: MINE,
+      [`GET /api/budget/${shiftMonth(M, 1)}`]: { lines: [], summary: EMPTY_SUMMARY },
+      'DELETE /api/budget/lines/2': () => new Promise<void>((r) => (finishDelete = r)),
+    })
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Rent' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    expect(await screen.findByRole('button', { name: 'Copy last month' })).toBeInTheDocument()
+    finishDelete()
+    await vi.waitFor(() => expect(vi.mocked(api).mock.calls.filter(([p]) => p === `/api/budget/${M}`)).toHaveLength(2))
+    await new Promise((r) => setTimeout(r))
+    expect(screen.queryByRole('listitem', { name: 'Rent' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy last month' })).toBeInTheDocument()
   })
 
   it('offers to copy last month into an empty month', async () => {

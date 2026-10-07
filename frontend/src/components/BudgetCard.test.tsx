@@ -63,6 +63,21 @@ describe('BudgetCard', () => {
     expect(screen.getByText('+$250.50').closest('[data-tone]')).toHaveAttribute('data-tone', 'good')
   })
 
+  it('caps meters at full and only flags overspending, not oversaving', () => {
+    const fill = (name: string) => screen.getByRole('meter', { name }).firstElementChild as HTMLElement
+    const { unmount } = render(<BudgetCard kind="expense" lines={EXPENSES} summary={SUMMARY} />)
+    expect(fill('Food spent of budget')).toHaveStyle({ width: '100%' })
+    expect(fill('Food spent of budget')).toHaveClass('bg-destructive')
+    expect(fill('Rent spent of budget')).toHaveClass('bg-primary')
+    unmount()
+    const lines = [line(3, 'savings', 'Holiday', '300.00', '450.00'), line(4, 'savings', 'Rainy day', '0.00', '0.00')]
+    render(<BudgetCard kind="savings" lines={lines} summary={{ ...SUMMARY, savings: plan('300.00', '450.00', '0.00') }} />)
+    expect(fill('Holiday saved of goal')).toHaveStyle({ width: '100%' })
+    expect(fill('Holiday saved of goal')).toHaveClass('bg-primary')
+    expect(fill('Rainy day saved of goal')).toHaveStyle({ width: '0%' })
+    expect(screen.getByText('Versus goal').nextElementSibling).toHaveAttribute('data-tone', 'neutral')
+  })
+
   it('adds a line', async () => {
     const { onAdd } = renderCard()
     await userEvent.click(screen.getByRole('button', { name: 'Add expense' }))

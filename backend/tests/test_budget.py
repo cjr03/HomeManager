@@ -104,6 +104,8 @@ def test_empty_month(auth_client):
 def test_invalid_month_422(auth_client, month):
     assert auth_client.get(f"/api/budget/{month}").status_code == 422
     assert add(auth_client, month, "asset", "x", "1").status_code == 422
+    assert auth_client.post(f"/api/budget/{month}/copy-previous").status_code == 422
+    assert auth_client.get(f"/api/budget/{month}/shared/1").status_code == 422
 
 
 def test_create_list_and_summary(auth_client):
@@ -169,16 +171,25 @@ def test_other_users_lines_are_404(make_user, client_for):
 
 def test_copy_previous(auth_client):
     add(auth_client, "2025-12", "income", "Salary", "5000", "3800")
-    add(auth_client, "2025-12", "expense", "Rent", "1500", "1500")
+    add(auth_client, "2025-12", "expense", "Rent", "1500", "1400")
+    add(auth_client, "2025-12", "savings", "Holiday", "300", "250")
+    add(auth_client, "2025-12", "debit", "Checking", "1000", "1200")
+    add(auth_client, "2025-12", "credit", "Card", "100")
+    add(auth_client, "2025-12", "asset", "Car", "9000")
     r = auth_client.post("/api/budget/2026-01/copy-previous")
     assert r.status_code == 201
     lines = r.json()["lines"]
+    # plans are kept, actuals cleared, and month-end balances become the new day-1 balances
     assert [(x["month"], x["kind"], x["name"], x["a"], x["b"]) for x in lines] == [
         ("2026-01", "income", "Salary", "5000.00", "3800.00"),
-        ("2026-01", "expense", "Rent", "1500.00", "1500.00"),
+        ("2026-01", "expense", "Rent", "1500.00", None),
+        ("2026-01", "savings", "Holiday", "300.00", None),
+        ("2026-01", "debit", "Checking", "1200.00", None),
+        ("2026-01", "credit", "Card", "100.00", None),
+        ("2026-01", "asset", "Car", "9000.00", None),
     ]
-    assert r.json()["summary"]["remainder"]["budgeted"] == "2300.00"
-    assert len(auth_client.get("/api/budget/2025-12").json()["lines"]) == 2  # source untouched
+    assert r.json()["summary"]["remainder"] == {"budgeted": "2000.00", "actual": "3800.00", "difference": "1800.00"}
+    assert len(auth_client.get("/api/budget/2025-12").json()["lines"]) == 6  # source untouched
     assert auth_client.post("/api/budget/2026-01/copy-previous").status_code == 409
 
 
@@ -226,6 +237,17 @@ def test_shared_view_combines_linked_users(db, make_user, client_for):
 
     # works from the other side too
     assert cb.get(f"/api/budget/2026-10/shared/{ann.id}").status_code == 200
+
+
+def test_shared_view_is_read_only_for_linked_partner(db, make_user, client_for):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    ca, cb = client_for(ann), client_for(bob)
+    line_id = add(ca, "2026-10", "asset", "Car", "9000").json()["id"]
+    assert cb.get(f"/api/budget/2026-10/shared/{ann.id}").json()["lines"][0]["id"] == line_id
+    assert cb.patch(f"/api/budget/lines/{line_id}", json={"name": "Mine", "a": "1"}).status_code == 404
+    assert cb.delete(f"/api/budget/lines/{line_id}").status_code == 404
+    assert [(x["name"], x["a"]) for x in ca.get("/api/budget/2026-10").json()["lines"]] == [("Car", "9000.00")]
 
 
 def test_shared_view_requires_accepted_link(db, make_user, client_for):
