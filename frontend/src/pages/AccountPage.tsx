@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
+import { passwordError } from '@/pages/LoginPage'
 import { useAuth, useUser } from '@/lib/auth'
 import { today } from '@/lib/month'
 
@@ -113,12 +114,12 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    const errs =
-      form.new_password.length < 8
-        ? { new_password: 'Use at least 8 characters' }
-        : form.new_password !== form.new_password_confirm
-          ? { new_password_confirm: 'Passwords do not match' }
-          : {}
+    const pw = passwordError(form.new_password)
+    const errs = pw
+      ? { new_password: pw }
+      : form.new_password !== form.new_password_confirm
+        ? { new_password_confirm: 'Passwords do not match' }
+        : {}
     setErrors(errs)
     setError('')
     if (Object.keys(errs).length) return

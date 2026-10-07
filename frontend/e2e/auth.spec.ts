@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const unique = (p: string) => `${p}_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`
+const unique = (p: string) => `${p}${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 1e3)}`
 
-async function signUp(page: Page, username: string, password = 'first-password') {
+async function signUp(page: Page, username: string, password = 'First-pass1') {
   await page.goto('/login')
   await page.getByRole('tab', { name: 'Sign up' }).click()
   await page.getByLabel('Email').fill(`${username}@example.com`)
@@ -44,7 +44,7 @@ test('sign up through every phase, then log out and back in', async ({ page }) =
   await page.goto('/meals')
   await expect(page).toHaveURL(/\/login$/)
 
-  await logIn(page, username, 'first-password')
+  await logIn(page, username, 'First-pass1')
   await expect(page.getByRole('heading', { level: 1, name: 'Meals' })).toBeVisible()
 })
 
@@ -62,16 +62,16 @@ test('change password, then log in with the new one', async ({ page }) => {
   await signUp(page, username)
   await page.goto('/account')
   await page.getByRole('button', { name: 'Change password' }).click()
-  await page.getByLabel('Current password').fill('first-password')
-  await page.getByLabel('New password', { exact: true }).fill('second-password')
-  await page.getByLabel('Confirm new password').fill('second-password')
+  await page.getByLabel('Current password').fill('First-pass1')
+  await page.getByLabel('New password', { exact: true }).fill('Second-pass1')
+  await page.getByLabel('Confirm new password').fill('Second-pass1')
   await page.getByRole('button', { name: 'Update password' }).click()
   await expect(page.getByRole('button', { name: 'Change password' })).toBeVisible()
 
   await logOut(page)
-  await logIn(page, username, 'first-password')
+  await logIn(page, username, 'First-pass1')
   await expect(page.getByRole('alert')).toBeVisible()
-  await logIn(page, username, 'second-password')
+  await logIn(page, username, 'Second-pass1')
   await expect(page.getByRole('heading', { level: 1, name: 'Meals' })).toBeVisible()
 })
 

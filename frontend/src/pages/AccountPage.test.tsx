@@ -43,7 +43,7 @@ describe('AccountPage', () => {
   it('rejects mismatched new passwords without calling the API', async () => {
     setup()
     await openPasswordForm()
-    await fillPassword('old-password', 'new-password', 'new-passwork')
+    await fillPassword('old-password', 'New-password1', 'New-passwork1')
     expect(screen.getByText('Passwords do not match')).toBeInTheDocument()
     expect(api).not.toHaveBeenCalledWith('/api/me/password', expect.anything())
   })
@@ -52,7 +52,15 @@ describe('AccountPage', () => {
     setup()
     await openPasswordForm()
     await fillPassword('old-password', 'short', 'short')
-    expect(screen.getByText('Use at least 8 characters')).toBeInTheDocument()
+    expect(screen.getByText('Use at least 9 characters')).toBeInTheDocument()
+    expect(api).not.toHaveBeenCalledWith('/api/me/password', expect.anything())
+  })
+
+  it('rejects a new password missing a character class', async () => {
+    setup()
+    await openPasswordForm()
+    await fillPassword('old-password', 'no-digits-here!', 'no-digits-here!')
+    expect(screen.getByText(/upper- and lower-case letter, a number and a special character/)).toBeInTheDocument()
     expect(api).not.toHaveBeenCalledWith('/api/me/password', expect.anything())
   })
 
@@ -63,17 +71,17 @@ describe('AccountPage', () => {
       },
     })
     await openPasswordForm()
-    await fillPassword('bad-password', 'new-password', 'new-password')
+    await fillPassword('bad-password', 'New-password1', 'New-password1')
     expect(await screen.findByRole('alert')).toHaveTextContent('Current password is incorrect')
   })
 
   it('changes the password and closes the form', async () => {
     setup({ 'PUT /api/me/password': undefined })
     await openPasswordForm()
-    await fillPassword('old-password', 'new-password', 'new-password')
+    await fillPassword('old-password', 'New-password1', 'New-password1')
     expect(api).toHaveBeenCalledWith('/api/me/password', {
       method: 'PUT',
-      json: { current_password: 'old-password', new_password: 'new-password', new_password_confirm: 'new-password' },
+      json: { current_password: 'old-password', new_password: 'New-password1', new_password_confirm: 'New-password1' },
     })
     expect(await screen.findByRole('button', { name: 'Change password' })).toBeInTheDocument()
     expect(screen.queryByLabelText('Current password')).not.toBeInTheDocument()

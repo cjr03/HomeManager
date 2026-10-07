@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated
@@ -6,7 +7,7 @@ from typing import Annotated
 import jwt
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pwdlib import PasswordHash
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import Index, String, Text, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import JSONB
@@ -70,7 +71,15 @@ class Preferences(BaseModel):
 
 
 HouseholdSize = Annotated[int, Field(ge=1, le=20)]
-Password = Annotated[str, Field(min_length=8, max_length=128)]
+
+
+def _strong_password(p: str) -> str:
+    if not all(re.search(c, p) for c in ("[a-z]", "[A-Z]", "[0-9]", "[^A-Za-z0-9]")):
+        raise ValueError("Include an upper- and lower-case letter, a number and a special character")
+    return p
+
+
+Password = Annotated[str, Field(min_length=9, max_length=128), AfterValidator(_strong_password)]
 
 
 class ProfileIn(BaseModel):
@@ -80,7 +89,7 @@ class ProfileIn(BaseModel):
 
 class SignupIn(ProfileIn):
     email: EmailStr
-    username: Annotated[str, Field(pattern=r"^[A-Za-z0-9_]{3,32}$")]
+    username: Annotated[str, Field(pattern=r"^[A-Za-z0-9_]{1,14}$")]
     password: Password
     password_confirm: str
 

@@ -60,23 +60,23 @@ def test_update_profile_validation(auth_client, body):
 def test_change_password(auth_client, db):
     r = auth_client.put(
         "/api/me/password",
-        json={"current_password": PASSWORD, "new_password": "brand-new-pw", "new_password_confirm": "brand-new-pw"},
+        json={"current_password": PASSWORD, "new_password": "Brand-new-pw1", "new_password_confirm": "Brand-new-pw1"},
     )
     assert r.status_code == 204
     db.refresh(auth_client.user)
-    assert verify_password("brand-new-pw", auth_client.user.password_hash)
+    assert verify_password("Brand-new-pw1", auth_client.user.password_hash)
 
 
 def test_change_password_wrong_current(auth_client):
     r = auth_client.put(
         "/api/me/password",
-        json={"current_password": "nope-nope", "new_password": "brand-new-pw", "new_password_confirm": "brand-new-pw"},
+        json={"current_password": "nope-nope", "new_password": "Brand-new-pw1", "new_password_confirm": "Brand-new-pw1"},
     )
     assert r.status_code == 400
     assert r.json()["detail"] == "Current password is incorrect"
 
 
-@pytest.mark.parametrize("new,confirm", [("brand-new-pw", "brand-new-px"), ("short", "short")])
+@pytest.mark.parametrize("new,confirm", [("Brand-new-pw1", "Brand-new-px1"), ("short", "short"), ("no-digits-here!", "no-digits-here!")])
 def test_change_password_validation(auth_client, new, confirm):
     r = auth_client.put(
         "/api/me/password", json={"current_password": PASSWORD, "new_password": new, "new_password_confirm": confirm}

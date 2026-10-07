@@ -7,20 +7,29 @@ import { USER, mockApi, renderAt, unauthorized } from '@/test-utils'
 
 vi.mock('@/lib/api', async (orig) => ({ ...(await orig<typeof import('@/lib/api')>()), api: vi.fn() }))
 
-const good = { email: 'ann@example.com', username: 'ann_1', password: 'secret-pw', password_confirm: 'secret-pw' }
+const good = { email: 'ann@example.com', username: 'ann_1', password: 'Secret-pw1', password_confirm: 'Secret-pw1' }
 
 describe('validateAccount', () => {
   it('accepts a valid account', () => {
     expect(validateAccount(good)).toEqual({})
   })
 
+  it.each(['a', 'x'.repeat(14)])('accepts username %s', (username) => {
+    expect(validateAccount({ ...good, username })).toEqual({})
+  })
+
   it.each([
     [{ email: 'nope' }, 'email'],
-    [{ username: 'ab' }, 'username'],
+    [{ username: '' }, 'username'],
     [{ username: 'has space' }, 'username'],
-    [{ username: 'x'.repeat(33) }, 'username'],
+    [{ username: 'x'.repeat(15) }, 'username'],
     [{ password: 'short', password_confirm: 'short' }, 'password'],
-    [{ password_confirm: 'secret-px' }, 'password_confirm'],
+    [{ password: 'Abcdef1!', password_confirm: 'Abcdef1!' }, 'password'],
+    [{ password: 'abcdefg1!', password_confirm: 'abcdefg1!' }, 'password'],
+    [{ password: 'ABCDEFG1!', password_confirm: 'ABCDEFG1!' }, 'password'],
+    [{ password: 'Abcdefgh!', password_confirm: 'Abcdefgh!' }, 'password'],
+    [{ password: 'Abcdefgh1', password_confirm: 'Abcdefgh1' }, 'password'],
+    [{ password_confirm: 'Secret-px1' }, 'password_confirm'],
   ])('flags %o', (over, field) => {
     expect(Object.keys(validateAccount({ ...good, ...over }))).toEqual([field])
   })
@@ -75,7 +84,7 @@ describe('LoginPage', () => {
     })
     renderAt('/login')
     await userEvent.type(await screen.findByLabelText('Username'), 'ann')
-    await userEvent.type(screen.getByLabelText('Password'), 'secret-pw')
+    await userEvent.type(screen.getByLabelText('Password'), 'Secret-pw1')
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }))
     expect(await screen.findByRole('heading', { level: 1, name: 'Meals' })).toBeInTheDocument()
   })

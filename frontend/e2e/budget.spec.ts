@@ -1,13 +1,13 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { currentMonth } from '../src/lib/month.ts'
 
-const unique = (p: string) => `${p}_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`
+const unique = (p: string) => `${p}${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 1e3)}`
 const MONTH = currentMonth()
 
 // The signup UI is covered by auth.spec.ts; here we sign up through the API to get straight to the budget.
 async function newUser(browser: Browser, username = unique('bud')) {
   const page = await (await browser.newContext()).newPage()
-  const password = 'budget-password'
+  const password = 'Budget-pass1'
   const res = await page.request.post('/api/auth/signup', {
     data: { email: `${username}@example.com`, username, password, password_confirm: password },
   })

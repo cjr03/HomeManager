@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
   // page.request shares the browser context's cookies, so this signs the page in.
-  const username = `smoke_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`
+  const username = `smoke${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 1e3)}`
   const res = await page.request.post('/api/auth/signup', {
-    data: { email: `${username}@example.com`, username, password: 'smoke-pass', password_confirm: 'smoke-pass' },
+    data: { email: `${username}@example.com`, username, password: 'Smoke-pass1', password_confirm: 'Smoke-pass1' },
   })
   expect(res.status()).toBe(201)
 })

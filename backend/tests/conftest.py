@@ -14,7 +14,7 @@ from app.auth import User, create_token, hash_password  # noqa: E402
 from app.db import Base, engine, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
-PASSWORD = "correct-horse"
+PASSWORD = "Correct-horse1"
 _seq = itertools.count()
 
 
