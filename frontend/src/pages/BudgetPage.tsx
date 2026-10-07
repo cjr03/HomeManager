@@ -202,22 +202,20 @@ export function BudgetPage() {
 
   async function copyPrevious() {
     try {
-      show(path, await api<MonthData>(`/api/budget/${month}/copy-previous`, { method: 'POST' }))
+      show(path, await api<MonthData>(`${path}/copy-previous`, { method: 'POST' }))
     } catch (err) {
       setCopyError(errorText(err))
     }
   }
 
   const shared = data && 'members' in data ? data : null
-  const owners = shared ? Object.fromEntries(shared.members.map((m) => [m.id, m])) : undefined
-  const handlers = (kind: Kind) =>
-    shared
-      ? {}
-      : {
-          onAdd: (v: LineInput) => run(() => api(`/api/budget/${month}/lines`, { method: 'POST', json: { kind, ...v } })),
-          onUpdate: (id: number, v: LineInput) => run(() => api(`/api/budget/lines/${id}`, { method: 'PATCH', json: v })),
-          onDelete: (id: number) => run(() => api(`/api/budget/lines/${id}`, { method: 'DELETE' })),
-        }
+  // Lines this view edits: shared ones on a shared tab, personal ones on yours.
+  const ownLines = data?.lines.filter((l) => (l.partner_id !== null) === !!shared) ?? []
+  const handlers = (kind: Kind) => ({
+    onAdd: (v: LineInput) => run(() => api(`${path}/lines`, { method: 'POST', json: { kind, ...v } })),
+    onUpdate: (id: number, v: LineInput) => run(() => api(`/api/budget/lines/${id}`, { method: 'PATCH', json: v })),
+    onDelete: (id: number) => run(() => api(`/api/budget/lines/${id}`, { method: 'DELETE' })),
+  })
 
   return (
     <div className="space-y-8">
@@ -249,10 +247,16 @@ export function BudgetPage() {
         <>
           <Overview summary={data.summary} />
           {shared && <Contributions data={shared} />}
-          {!shared && !data.lines.length && (
+          {shared && (
+            <p className="px-1 text-sm text-muted-foreground">
+              Only lines you share appear here, split evenly between you. Half of each shared expense and savings line also
+              shows up in your personal budget.
+            </p>
+          )}
+          {!ownLines.length && (
             <Card className="flex-row flex-wrap items-center justify-between gap-4 border-dashed px-6 shadow-none">
               <div className="space-y-1">
-                <h2 className="font-semibold">Nothing planned for {monthLabel(month)} yet</h2>
+                <h2 className="font-semibold">Nothing {shared ? 'shared' : 'planned'} for {monthLabel(month)} yet</h2>
                 <p className="text-sm text-muted-foreground">Add lines below, or bring over last month's and adjust what changed.</p>
                 <FormError>{copyError}</FormError>
               </div>
@@ -271,7 +275,7 @@ export function BudgetPage() {
                     kind={kind}
                     lines={data.lines.filter((l) => l.kind === kind)}
                     summary={data.summary}
-                    owners={owners}
+                    shared={!!shared}
                     {...handlers(kind)}
                   />
                 ))}

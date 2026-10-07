@@ -23,8 +23,8 @@ const SUMMARY = {
   remainder: { budgeted: '2000.00', actual: '2200.00', difference: '200.00' },
   net_worth: '12345.67',
 }
-const line = (id: number, kind: string, name: string, a: string, b: string | null, owner_id = 1) => ({
-  id, owner_id, month: M, kind, name, a, b, position: id,
+const line = (id: number, kind: string, name: string, a: string, b: string | null, owner_id = 1, partner_id: number | null = null) => ({
+  id, owner_id, partner_id, month: M, kind, name, a, b, position: id,
 })
 const MINE = {
   lines: [line(1, 'income', 'Salary', '5000.00', '3800.00'), line(2, 'expense', 'Rent', '1500.00', '1400.00')],
@@ -134,13 +134,13 @@ describe('BudgetPage', () => {
     expect(await screen.findByText('Last month has nothing to copy')).toBeInTheDocument()
   })
 
-  it('switches to the read-only shared view with per-member contributions', async () => {
+  it('switches to the shared view with per-member contributions', async () => {
     setup({
       'GET /api/links': { ...NO_LINKS, linked: [{ id: 9, user_id: 2, username: 'bob', avatar: null }] },
       [`GET /api/budget/${M}`]: MINE,
       [`GET /api/budget/${M}/shared/2`]: {
         members: [{ id: 1, username: 'ann', avatar: null }, BOB],
-        lines: [...MINE.lines, line(3, 'expense', 'Bob gym', '50.00', '50.00', 2)],
+        lines: [line(4, 'expense', 'Groceries', '600.00', null, 2, 1)],
         summary: { ...SUMMARY, net_worth: '20000.00' },
         per_member: [
           { user_id: 1, summary: SUMMARY },
@@ -151,14 +151,54 @@ describe('BudgetPage', () => {
     await userEvent.click(await screen.findByRole('tab', { name: 'Shared with bob' }))
     const o = await overview()
     expect(await o.findByText('$20,000.00')).toBeInTheDocument()
-    expect(within(screen.getByRole('listitem', { name: 'Bob gym' })).getByTitle('bob')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^(Add|Edit|Delete)/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: 'Rent' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Groceries' })).toBeInTheDocument()
     const contrib = within(screen.getByRole('region', { name: 'Contributions' }))
     expect(contrib.getByText('$7,654.33')).toBeInTheDocument()
     expect(contrib.getByText('$12,345.67')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('tab', { name: 'Mine' }))
     expect(await o.findByText('$12,345.67')).toBeInTheDocument()
+  })
+
+  it('adds, edits and deletes shared lines on the shared tab', async () => {
+    const shared = {
+      members: [{ id: 1, username: 'ann', avatar: null }, BOB],
+      lines: [line(4, 'expense', 'Groceries', '600.00', null, 2, 1)],
+      summary: SUMMARY,
+      per_member: [{ user_id: 1, summary: SUMMARY }, { user_id: 2, summary: SUMMARY }],
+    }
+    setup({
+      'GET /api/links': { ...NO_LINKS, linked: [{ id: 9, user_id: 2, username: 'bob', avatar: null }] },
+      [`GET /api/budget/${M}`]: MINE,
+      [`GET /api/budget/${M}/shared/2`]: shared,
+      [`POST /api/budget/${M}/shared/2/lines`]: {},
+      'PATCH /api/budget/lines/4': {},
+      'DELETE /api/budget/lines/4': null,
+    })
+    await userEvent.click(await screen.findByRole('tab', { name: 'Shared with bob' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add loan' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'Mortgage')
+    await userEvent.type(screen.getByLabelText('Amount owed'), '200000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api).toHaveBeenCalledWith(`/api/budget/${M}/shared/2/lines`, {
+      method: 'POST', json: { kind: 'loan', name: 'Mortgage', a: '200000', b: null },
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Groceries' }))
+    expect(api).toHaveBeenCalledWith('/api/budget/lines/4', { method: 'DELETE' })
+  })
+
+  it('offers to copy last month into an empty shared month', async () => {
+    const empty = { members: [{ id: 1, username: 'ann', avatar: null }, BOB], lines: [], summary: SUMMARY, per_member: [1, 2].map((user_id) => ({ user_id, summary: SUMMARY })) }
+    setup({
+      'GET /api/links': { ...NO_LINKS, linked: [{ id: 9, user_id: 2, username: 'bob', avatar: null }] },
+      [`GET /api/budget/${M}`]: MINE,
+      [`GET /api/budget/${M}/shared/2`]: empty,
+      [`POST /api/budget/${M}/shared/2/copy-previous`]: empty,
+    })
+    await userEvent.click(await screen.findByRole('tab', { name: 'Shared with bob' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy last month' }))
+    expect(api).toHaveBeenCalledWith(`/api/budget/${M}/shared/2/copy-previous`, { method: 'POST' })
   })
 
   it('hides the view switcher without linked accounts', async () => {

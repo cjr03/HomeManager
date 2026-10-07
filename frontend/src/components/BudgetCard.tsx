@@ -1,13 +1,12 @@
 import { CircleAlert, CircleCheck, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { UserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 export type Kind = 'asset' | 'debit' | 'income' | 'loan' | 'credit' | 'expense' | 'savings'
-export type Line = { id: number; owner_id: number; month: string; kind: Kind; name: string; a: string; b: string | null; position: number }
+export type Line = { id: number; owner_id: number; partner_id: number | null; month: string; kind: Kind; name: string; a: string; b: string | null; position: number }
 export type LineInput = { name: string; a: string; b: string | null }
 export type Member = { id: number; username: string; avatar: string | null }
 type Plan = { budgeted: string; actual: string; difference: string }
@@ -192,17 +191,18 @@ type Props = {
   kind: Kind
   lines: Line[]
   summary: Summary
-  /** Shared view: tag each row with its owner. Cards without handlers are read-only. */
-  owners?: Record<number, Member>
+  /** Shared view holds only shared lines. The personal view shows your half of each, read-only. Cards without handlers are read-only. */
+  shared?: boolean
   onAdd?: (v: LineInput) => void
   onUpdate?: (id: number, v: LineInput) => void
   onDelete?: (id: number) => void
 }
 
-export function BudgetCard({ kind, lines, summary, owners, onAdd, onUpdate, onDelete }: Props) {
+export function BudgetCard({ kind, lines, summary, shared = false, onAdd, onUpdate, onDelete }: Props) {
   const config = KINDS[kind]
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const editable = !!onAdd
+  const canEdit = (line: Line) => editable && (shared || line.partner_id === null)
   const row = cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5', ROW[editable ? 'editable' : 'readOnly'][config.cols.length as 1 | 2])
   const change = config.change?.(summary)
 
@@ -245,15 +245,13 @@ export function BudgetCard({ kind, lines, summary, owners, onAdd, onUpdate, onDe
             ) : (
               <li key={line.id} aria-label={line.name} className={cn(row, 'py-2.5')}>
                 <span className="flex min-w-0 items-center gap-2 font-medium">
-                  {owners?.[line.owner_id] && (
-                    <span title={owners[line.owner_id].username} className="shrink-0">
-                      <UserAvatar {...owners[line.owner_id]} className="size-6 text-xs" />
-                    </span>
-                  )}
                   <span className="truncate">{line.name}</span>
+                  {line.partner_id !== null && !shared && (
+                    <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-normal text-accent-foreground">½ shared</span>
+                  )}
                 </span>
                 <Amounts values={config.cols.length === 2 ? [line.a, line.b] : [line.a]} labels={config.cols} />
-                {editable && (
+                {canEdit(line) && (
                   <span className="col-start-2 row-start-1 flex justify-end gap-0.5 @md:col-start-auto @md:row-start-auto">
                     <Button size="icon-sm" variant="ghost" className="rounded-full text-muted-foreground" aria-label={`Edit ${line.name}`} onClick={() => setEditing(line.id)}>
                       <Pencil />

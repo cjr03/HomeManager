@@ -19,6 +19,9 @@ async def lifespan(_: FastAPI):
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE chores ADD COLUMN IF NOT EXISTS shared boolean NOT NULL DEFAULT false"))
         conn.execute(text("ALTER TABLE chores ADD COLUMN IF NOT EXISTS weekdays smallint[] NOT NULL DEFAULT '{}'"))
+        conn.execute(text(
+            "ALTER TABLE budget_lines ADD COLUMN IF NOT EXISTS partner_id integer REFERENCES users(id) ON DELETE CASCADE"
+        ))
     yield
 
 
