@@ -74,10 +74,13 @@ export function DayDialog({
 
   async function save(e: FormEvent) {
     e.preventDefault()
-    const changed = SLOTS.filter(({ slot }) => names[slot].trim() && names[slot].trim() !== meals[slot]?.name)
+    const changed = SLOTS.filter(({ slot }) => names[slot].trim() !== (meals[slot]?.name ?? ''))
     try {
       await Promise.all(
-        changed.map(({ slot }) => api(`/api/meals/${day}/${slot}`, { method: 'PUT', json: { name: names[slot].trim() } })),
+        changed.map(({ slot }) => {
+          const name = names[slot].trim()
+          return api(`/api/meals/${day}/${slot}`, name ? { method: 'PUT', json: { name } } : { method: 'DELETE' })
+        }),
       )
       await onChanged()
       onClose()

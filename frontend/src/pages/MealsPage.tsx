@@ -337,6 +337,7 @@ export function MealsPage() {
   const [busy, setBusy] = useState<Agent | null>(null)
   const [needed, setNeeded] = useState<Item[] | null>(null)
   const [shopping, setShopping] = useState<ShoppingItem[] | null>(null)
+  const [builds, setBuilds] = useState(0) // remounts the shopping card so check-offs reset
 
   const load = useCallback(async () => {
     try {
@@ -396,6 +397,7 @@ export function MealsPage() {
       })
       setNeeded(r.needed.items)
       setShopping(r.shopping.items)
+      setBuilds((n) => n + 1)
     })
 
   const action = (agent: Agent, label: string, Icon: typeof Sparkles, onClick: () => void, primary = false) => (
@@ -416,7 +418,7 @@ export function MealsPage() {
       <div className="contents lg:block lg:space-y-6">
         <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={selectWeek} onOpen={setOpenDay} />
         <div className="order-3 space-y-6 empty:hidden">
-          {shopping && <ShoppingListCard key={week} items={shopping} />}
+          {shopping && <ShoppingListCard key={builds} items={shopping} />}
           {needed && (
           <SectionCard title="Groceries needed" description={`Everything the meals for ${weekLabel(week)} call for.`}>
             <ul className="columns-1 gap-6 text-sm sm:columns-2">

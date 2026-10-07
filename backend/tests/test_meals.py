@@ -194,7 +194,15 @@ def test_pantry_replace(auth_client, make_user, client_for):
     assert client_for(make_user()).get("/api/pantry").json() == {"items": []}
 
 
-@pytest.mark.parametrize("item", [{"name": "Milk", "quantity": 0}, {"name": "", "quantity": 1}])
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"name": "Milk", "quantity": 0},
+        {"name": "", "quantity": 1},
+        {"name": "x" * 201, "quantity": 1},
+        {"name": "Milk", "quantity": 1, "unit": "x" * 21},
+    ],
+)
 def test_pantry_validates(auth_client, item):
     assert auth_client.put("/api/pantry", json={"items": [item]}).status_code == 422
 
@@ -302,6 +310,18 @@ def test_agent_error_is_502_with_safe_message(auth_client, fake, path, json):
     r = auth_client.post(f"/api/meals/{path}", json=json)
     assert r.status_code == 502
     assert r.json() == {"detail": "The meal assistant is unavailable right now. Please try again."}
+
+
+def test_generate_only_saves_requested_slots(auth_client, fake):
+    put_meal(auth_client, SUNDAY, "lunch", name="Mine")
+    real = fake.generate_meals
+    fake.generate_meals = lambda have, prefs, size, slots: real(have, prefs, size, list(Slot))  # ignores slots
+    saved = auth_client.post(
+        "/api/meals/generate", json={"week_start": SUNDAY, "slots": ["dinner"], "overwrite": True}
+    ).json()
+    assert {m["slot"] for m in saved} == {"dinner"}
+    lunches = [m for m in auth_client.get("/api/meals?month=2026-10").json() if m["slot"] == "lunch"]
+    assert [m["name"] for m in lunches] == ["Mine"]
 
 
 def test_default_agents_dependency_is_the_agents_module():

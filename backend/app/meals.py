@@ -84,6 +84,17 @@ class WeekIn(BaseModel):
         return v
 
 
+class PantryItemIn(GroceryItem):
+    """GroceryItem with the pantry_items column limits."""
+
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    unit: Annotated[str, StringConstraints(max_length=20)] = ""
+
+
+class PantryIn(BaseModel):
+    items: list[PantryItemIn]
+
+
 class GenerateIn(WeekIn):
     slots: Annotated[list[Slot], Field(min_length=1)] = list(Slot)
     overwrite: bool = False
@@ -170,7 +181,7 @@ def get_pantry(user: CurrentUser, db: DB):
 
 
 @router.put("/pantry", response_model=GroceryList)
-def put_pantry(body: GroceryList, user: CurrentUser, db: DB):
+def put_pantry(body: PantryIn, user: CurrentUser, db: DB):
     db.execute(delete(PantryItem).where(PantryItem.user_id == user.id))
     db.add_all(PantryItem(user_id=user.id, **i.model_dump()) for i in body.items)
     db.commit()
@@ -198,7 +209,7 @@ def generate(body: GenerateIn, user: CurrentUser, db: DB, ag: Agents):
         _upsert(db, user, dates[day.weekday], meal.slot, MealIn(**meal.model_dump()))
         for day in week.days
         for meal in day.meals
-        if body.overwrite or (dates[day.weekday], meal.slot) not in filled
+        if meal.slot in body.slots and (body.overwrite or (dates[day.weekday], meal.slot) not in filled)
     ]
     db.commit()
     return sorted(saved, key=_by_day)

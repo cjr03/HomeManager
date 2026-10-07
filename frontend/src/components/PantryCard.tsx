@@ -50,7 +50,7 @@ export function PantryCard() {
               const who = r.name.trim() || `item ${i + 1}`
               return (
                 <li key={i} className="grid grid-cols-[minmax(0,1fr)_4rem_3rem_auto] gap-1.5">
-                  <Input aria-label={`Item ${i + 1} name`} placeholder="Rice" value={r.name} onChange={(e) => set(i, { name: e.target.value })} />
+                  <Input aria-label={`Item ${i + 1} name`} placeholder="Rice" maxLength={200} value={r.name} onChange={(e) => set(i, { name: e.target.value })} />
                   <Input
                     aria-label={`Quantity of ${who}`}
                     type="number"
@@ -62,7 +62,7 @@ export function PantryCard() {
                     value={r.quantity}
                     onChange={(e) => set(i, { quantity: e.target.value })}
                   />
-                  <Input aria-label={`Unit of ${who}`} placeholder="kg" value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} />
+                  <Input aria-label={`Unit of ${who}`} placeholder="kg" maxLength={20} value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} />
                   <Button
                     type="button"
                     variant="ghost"

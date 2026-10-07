@@ -60,6 +60,14 @@ describe('MealsPage', () => {
     expect(screen.getByRole('button', { name: 'Select week of Oct 18' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('selects the week of a clicked day', async () => {
+    setup()
+    await openDay('Tuesday, October 20')
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('heading', { name: 'Oct 18 – 24' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select week of Oct 18' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('summarises the household with a link to edit it', async () => {
     setup()
     expect(await screen.findByText('2 people')).toBeInTheDocument()
@@ -103,6 +111,16 @@ describe('MealsPage', () => {
       expect(del).toHaveBeenCalled()
       expect(screen.getByLabelText('Dinner')).toHaveValue('')
     })
+
+    it('deletes a meal whose name was emptied on save', async () => {
+      const del = vi.fn()
+      setup({ 'DELETE /api/meals/2026-10-06/dinner': del })
+      await openDay()
+      await userEvent.clear(await screen.findByLabelText('Dinner'))
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      expect(del).toHaveBeenCalledWith({ method: 'DELETE' })
+      await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
   })
 
   describe('pantry', () => {
@@ -117,14 +135,13 @@ describe('MealsPage', () => {
       await userEvent.type(screen.getByLabelText('Quantity of Eggs'), '6')
       await userEvent.click(screen.getByRole('button', { name: 'Add item' }))
       await userEvent.click(screen.getByRole('button', { name: 'Remove item 3' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Remove item 1' }))
+      expect(screen.queryByLabelText('Quantity of Milk')).not.toBeInTheDocument()
       await userEvent.click(screen.getByRole('button', { name: 'Save pantry' }))
       expect(put).toHaveBeenCalledWith({
         method: 'PUT',
         json: {
-          items: [
-            { name: 'Milk', quantity: 2, unit: 'l' },
-            { name: 'Eggs', quantity: 6, unit: '' },
-          ],
+          items: [{ name: 'Eggs', quantity: 6, unit: '' }],
         },
       })
       expect(toast.success).toHaveBeenCalledWith('Pantry saved')
@@ -162,6 +179,26 @@ describe('MealsPage', () => {
       await userEvent.click(within(card).getByRole('button', { name: 'Copy' }))
       expect(writeText).toHaveBeenCalledWith('Produce\n- 2 Onion\n- 1 Garlic\n\nPantry\n- 500 g Spaghetti')
       expect(screen.getByRole('region', { name: 'Groceries needed' })).toHaveTextContent('500 g Spaghetti')
+    })
+
+    it('resets check-offs when the list is rebuilt and hides results for another week', async () => {
+      let items = [
+        { name: 'Onion', quantity: 2, unit: '', category: 'produce' },
+        { name: 'Garlic', quantity: 1, unit: '', category: 'produce' },
+      ]
+      setup({ 'POST /api/meals/shopping-list': () => ({ needed: { items: [] }, shopping: { items } }) })
+      const build = await screen.findByRole('button', { name: 'Build shopping list' })
+      await userEvent.click(build)
+      await userEvent.click(await screen.findByRole('checkbox', { name: '2 Onion' }))
+      items = [items[1], items[0]]
+      await userEvent.click(build)
+      await vi.waitFor(() => expect(screen.getAllByRole('checkbox')[0]).toHaveAccessibleName('1 Garlic'))
+      expect(screen.getByRole('checkbox', { name: '1 Garlic' })).not.toBeChecked()
+      expect(screen.getByRole('checkbox', { name: '2 Onion' })).not.toBeChecked()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Select week of Oct 18' }))
+      expect(screen.queryByRole('region', { name: 'Shopping list' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: 'Groceries needed' })).not.toBeInTheDocument()
     })
 
     it('shows the groceries needed for the week', async () => {
