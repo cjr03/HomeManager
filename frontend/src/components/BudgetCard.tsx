@@ -6,9 +6,13 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 export type Kind = 'asset' | 'debit' | 'income' | 'loan' | 'credit' | 'expense' | 'savings'
-export type Line = { id: number; owner_id: number; partner_id: number | null; month: string; kind: Kind; name: string; a: string; b: string | null; position: number }
-export type LineInput = { name: string; a: string; b: string | null }
+export type Line = { id: number; owner_id: number; partner_id: number | null; user_share: number; partner_share: number; month: string; kind: Kind; name: string; a: string; b: string | null; position: number }
+export type LineInput = { name: string; a: string; b: string | null; user_share?: number; partner_share?: number }
 export type Member = { id: number; username: string; avatar: string | null }
+
+/** [my share, their share] in percent; the line stores them from its owner's side. */
+export const sharesFor = (line: Line, me: number) =>
+  line.owner_id === me ? [line.user_share, line.partner_share] : [line.partner_share, line.user_share]
 type Plan = { budgeted: string; actual: string; difference: string }
 type Balances = { start: string; end: string; difference: string }
 export type Summary = {
@@ -139,15 +143,42 @@ function Meter({ name, label, budgeted, actual, over }: { name: string; label: s
   )
 }
 
-function LineForm({ config, initial, onSave, onCancel }: { config: Config; initial?: Line; onSave: (v: LineInput) => void; onCancel: () => void }) {
+type FormProps = { config: Config; initial?: Line; members?: Member[]; onSave: (v: LineInput) => void; onCancel: () => void }
+
+function LineForm({ config, initial, members, onSave, onCancel }: FormProps) {
   const [name, setName] = useState(initial?.name ?? '')
   const [a, setA] = useState(initial?.a ?? '')
   const [b, setB] = useState(initial?.b ?? '')
+  const me = members?.[0].id ?? 0
+  const [shares, setShares] = useState(initial && members ? sharesFor(initial, me).map(String) : ['50', '50'])
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    onSave({ name: name.trim(), a, b: config.cols.length === 2 && b !== '' ? b : null })
+    const v: LineInput = { name: name.trim(), a, b: config.cols.length === 2 && b !== '' ? b : null }
+    if (members) {
+      // New lines are owned by me; an existing line keeps its owner, so map my/their back to user/partner.
+      const [mine, theirs] = shares.map(Number)
+      const ownerIsMe = !initial || initial.owner_id === me
+      Object.assign(v, { user_share: ownerIsMe ? mine : theirs, partner_share: ownerIsMe ? theirs : mine })
+    }
+    onSave(v)
   }
+
+  const share = (i: number, label: string) => (
+    <label className="grid gap-1 text-xs text-muted-foreground">
+      {label}
+      <Input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={100}
+        required
+        className="tabular-nums"
+        value={shares[i]}
+        onChange={(e) => setShares(shares.map((x, j) => (j === i ? e.target.value : x)))}
+      />
+    </label>
+  )
 
   const amount = (label: string, value: string, set: (v: string) => void, required: boolean) => (
     <label className="grid gap-1 text-xs text-muted-foreground">
@@ -175,6 +206,12 @@ function LineForm({ config, initial, onSave, onCancel }: { config: Config; initi
         {amount(config.cols[0], a, setA, true)}
         {config.cols[1] && amount(config.cols[1], b, setB, false)}
       </div>
+      {members && (
+        <div className="grid grid-cols-2 gap-2 @md:w-64">
+          {share(0, 'Your share %')}
+          {share(1, `${members[1].username}'s share %`)}
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <Button type="button" size="sm" variant="ghost" className="rounded-full" onClick={onCancel}>
           Cancel
@@ -191,18 +228,21 @@ type Props = {
   kind: Kind
   lines: Line[]
   summary: Summary
-  /** Shared view holds only shared lines. The personal view shows your half of each, read-only. Cards without handlers are read-only. */
-  shared?: boolean
+  /**
+   * Shared view: [me, partner]. It holds only shared lines, each with an editable split.
+   * The personal view shows your share of each shared line, read-only. Cards without handlers are read-only.
+   */
+  members?: Member[]
   onAdd?: (v: LineInput) => void
   onUpdate?: (id: number, v: LineInput) => void
   onDelete?: (id: number) => void
 }
 
-export function BudgetCard({ kind, lines, summary, shared = false, onAdd, onUpdate, onDelete }: Props) {
+export function BudgetCard({ kind, lines, summary, members, onAdd, onUpdate, onDelete }: Props) {
   const config = KINDS[kind]
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const editable = !!onAdd
-  const canEdit = (line: Line) => editable && (shared || line.partner_id === null)
+  const canEdit = (line: Line) => editable && (!!members || line.partner_id === null)
   const row = cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5', ROW[editable ? 'editable' : 'readOnly'][config.cols.length as 1 | 2])
   const change = config.change?.(summary)
 
@@ -235,6 +275,7 @@ export function BudgetCard({ kind, lines, summary, shared = false, onAdd, onUpda
                 <LineForm
                   config={config}
                   initial={line}
+                  members={members}
                   onCancel={() => setEditing(null)}
                   onSave={(v) => {
                     setEditing(null)
@@ -246,8 +287,10 @@ export function BudgetCard({ kind, lines, summary, shared = false, onAdd, onUpda
               <li key={line.id} aria-label={line.name} className={cn(row, 'py-2.5')}>
                 <span className="flex min-w-0 items-center gap-2 font-medium">
                   <span className="truncate">{line.name}</span>
-                  {line.partner_id !== null && !shared && (
-                    <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-normal text-accent-foreground">½ shared</span>
+                  {line.partner_id !== null && (
+                    <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-normal text-accent-foreground">
+                      {members ? `${sharesFor(line, members[0].id).join('/')} split` : 'Shared'}
+                    </span>
                   )}
                 </span>
                 <Amounts values={config.cols.length === 2 ? [line.a, line.b] : [line.a]} labels={config.cols} />
@@ -280,6 +323,7 @@ export function BudgetCard({ kind, lines, summary, shared = false, onAdd, onUpda
         {editing === 'new' && (
           <LineForm
             config={config}
+            members={members}
             onCancel={() => setEditing(null)}
             onSave={(v) => {
               setEditing(null)

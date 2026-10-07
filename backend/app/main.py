@@ -22,6 +22,8 @@ async def lifespan(_: FastAPI):
         conn.execute(text(
             "ALTER TABLE budget_lines ADD COLUMN IF NOT EXISTS partner_id integer REFERENCES users(id) ON DELETE CASCADE"
         ))
+        conn.execute(text("ALTER TABLE budget_lines ADD COLUMN IF NOT EXISTS user_share smallint NOT NULL DEFAULT 50"))
+        conn.execute(text("ALTER TABLE budget_lines ADD COLUMN IF NOT EXISTS partner_share smallint NOT NULL DEFAULT 50"))
     yield
 
 

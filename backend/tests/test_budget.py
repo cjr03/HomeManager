@@ -113,7 +113,7 @@ def test_create_list_and_summary(auth_client):
     assert r.status_code == 201
     created = r.json()
     assert created | {"id": 0} == {
-        "id": 0, "owner_id": auth_client.user.id, "partner_id": None, "month": "2026-10", "kind": "income",
+        "id": 0, "owner_id": auth_client.user.id, "partner_id": None, "user_share": 50, "partner_share": 50, "month": "2026-10", "kind": "income",
         "name": "Salary", "a": "5000.00", "b": "3800.50", "position": 0,
     }
     add(auth_client, "2026-10", "expense", "Rent", "1500")
@@ -233,9 +233,7 @@ def test_shared_view_shows_only_lines_shared_by_the_pair(db, make_user, client_f
     assert body["summary"]["income"] == {"pre_tax": "2000.00", "post_tax": "1500.00"}
     assert body["summary"]["remainder"]["actual"] == "500.00"
     assert body["summary"]["assets"] == "0.00"
-    # each member carries half of every shared line
-    per = {m["user_id"]: m["summary"] for m in body["per_member"]}
-    assert per[ann.id]["income"]["post_tax"] == per[bob.id]["income"]["post_tax"] == "750.00"
+    assert "per_member" not in body
 
     # works from the other side too
     assert cb.get(f"/api/budget/2026-10/shared/{ann.id}").json()["lines"] == body["lines"]
@@ -262,8 +260,9 @@ def test_shared_view_requires_accepted_link(db, make_user, client_for):
 
 # ---- shared lines ----
 
-def shared_add(c, month, other, kind, name, a, b=None):
-    return c.post(f"/api/budget/{month}/shared/{other.id}/lines", json={"kind": kind, "name": name, "a": a, "b": b})
+def shared_add(c, month, other, kind, name, a, b=None, **shares):
+    body = {"kind": kind, "name": name, "a": a, "b": b, **shares}
+    return c.post(f"/api/budget/{month}/shared/{other.id}/lines", json=body)
 
 
 def test_shared_lines_are_editable_by_both_members(db, make_user, client_for):
@@ -282,25 +281,49 @@ def test_shared_lines_are_editable_by_both_members(db, make_user, client_for):
     assert ca.get(f"/api/budget/2026-10/shared/{bob.id}").json()["lines"] == []
 
 
-def test_personal_view_includes_half_of_shared_expenses_and_savings(db, make_user, client_for):
+def test_personal_view_includes_your_share_of_every_shared_line(db, make_user, client_for):
     ann, bob = make_user(), make_user()
     link(db, ann, bob)
     ca, cb = client_for(ann), client_for(bob)
     add(ca, "2026-10", "income", "Pay", "4000", "3000")
     shared_add(cb, "2026-10", ann, "expense", "Rent", "2000", "1800")
-    shared_add(cb, "2026-10", ann, "savings", "Holiday", "400")
-    shared_add(cb, "2026-10", ann, "asset", "House", "300000")
+    shared_add(cb, "2026-10", ann, "savings", "Holiday", "400", user_share=25, partner_share=75)
+    shared_add(cb, "2026-10", ann, "asset", "House", "300000", user_share=100, partner_share=100)
+    shared_add(cb, "2026-10", ann, "debit", "Joint", "1000", "1201")
+    shared_add(cb, "2026-10", ann, "credit", "Card", "100", "300")
+    shared_add(cb, "2026-10", ann, "loan", "Mortgage", "200000", user_share=0, partner_share=100)
+    shared_add(cb, "2026-10", ann, "income", "Rental", "1000", "800")
 
     body = ca.get("/api/budget/2026-10").json()
-    assert [(x["name"], x["a"], x["b"], x["partner_id"]) for x in body["lines"]] == [
-        ("Pay", "4000.00", "3000.00", None),
-        ("Rent", "1000.00", "900.00", ann.id),
-        ("Holiday", "200.00", None, ann.id),
+    assert [(x["name"], x["a"], x["b"]) for x in body["lines"]] == [
+        ("Pay", "4000.00", "3000.00"),
+        ("Rent", "1000.00", "900.00"),
+        ("Holiday", "300.00", None),
+        ("House", "300000.00", None),
+        ("Joint", "500.00", "600.50"),
+        ("Card", "50.00", "150.00"),
+        ("Mortgage", "200000.00", None),
+        ("Rental", "500.00", "400.00"),
     ]
     assert body["summary"]["expenses"]["actual"] == "900.00"
-    assert body["summary"]["remainder"] == {"budgeted": "1800.00", "actual": "2100.00", "difference": "300.00"}
-    assert body["summary"]["assets"] == "0.00"
-    assert [x["a"] for x in cb.get("/api/budget/2026-10").json()["lines"]] == ["1000.00", "200.00"]
+    assert body["summary"]["net_worth"] == "100450.50"
+    # bob owns the lines, so user_share is his
+    assert [(x["name"], x["a"]) for x in cb.get("/api/budget/2026-10").json()["lines"][1:4]] == [
+        ("Holiday", "100.00"), ("House", "300000.00"), ("Joint", "500.00"),
+    ]
+
+
+def test_shares_are_editable_and_bounded(db, make_user, client_for):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    ca, cb = client_for(ann), client_for(bob)
+    assert shared_add(ca, "2026-10", bob, "asset", "Car", "9000", user_share=101).status_code == 422
+    assert shared_add(ca, "2026-10", bob, "asset", "Car", "9000", partner_share=-1).status_code == 422
+    line_id = shared_add(ca, "2026-10", bob, "asset", "Car", "9000").json()["id"]
+    r = cb.patch(f"/api/budget/lines/{line_id}", json={"name": "Car", "a": "9000", "user_share": 70, "partner_share": 30})
+    assert (r.json()["user_share"], r.json()["partner_share"]) == (70, 30)
+    assert cb.get("/api/budget/2026-10").json()["lines"][0]["a"] == "2700.00"
+    assert ca.post("/api/budget/2026-11/shared/%d/copy-previous" % bob.id).json()["lines"][0]["user_share"] == 70
 
 
 def test_shared_lines_need_an_accepted_link(db, make_user, client_for):

@@ -4,15 +4,14 @@ import { toast } from 'sonner'
 import { BudgetCard, Delta, money, TONE_LABEL, type Kind, type Line, type LineInput, type Member, type Summary } from '@/components/BudgetCard'
 import { errorText, FormError } from '@/components/Field'
 import { MonthNav } from '@/components/MonthNav'
-import { UserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
 import { currentMonth, monthLabel } from '@/lib/month'
 
 type MonthData = { lines: Line[]; summary: Summary }
-type SharedData = MonthData & { members: Member[]; per_member: { user_id: number; summary: Summary }[] }
+type SharedData = MonthData & { members: Member[] }
 type LinkEntry = { id: number; user_id: number; username: string; avatar: string | null }
 
 const SECTIONS: { title: string; kinds: Kind[]; grid: string }[] = [
@@ -136,40 +135,6 @@ function Overview({ summary: s }: { summary: Summary }) {
   )
 }
 
-function Contributions({ data }: { data: SharedData }) {
-  return (
-    <section aria-label="Contributions">
-      <Card className="gap-4">
-        <CardContent className="space-y-4">
-          <div>
-            <h2 className="font-semibold">Who brings what</h2>
-            <p className="text-sm text-muted-foreground">Each person's share of the combined numbers above</p>
-          </div>
-          <ul className="grid gap-3 md:grid-cols-2">
-            {data.members.map((m) => {
-              const s = data.per_member.find((p) => p.user_id === m.id)!.summary
-              return (
-                <li key={m.id} className="space-y-3 rounded-xl bg-muted/60 p-4">
-                  <div className="flex items-center gap-2 font-semibold">
-                    <UserAvatar {...m} className="size-7 text-sm" />
-                    {m.username}
-                  </div>
-                  <dl className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
-                    <Figure label="Income">{money(s.income.post_tax)}</Figure>
-                    <Figure label="Spent">{money(s.expenses.actual)}</Figure>
-                    <Figure label="Saved">{money(s.savings.actual)}</Figure>
-                    <Figure label="Net worth">{money(s.net_worth)}</Figure>
-                  </dl>
-                </li>
-              )
-            })}
-          </ul>
-        </CardContent>
-      </Card>
-    </section>
-  )
-}
-
 export function BudgetPage() {
   const [month, setMonth] = useState(currentMonth)
   const [view, setView] = useState('mine')
@@ -246,11 +211,10 @@ export function BudgetPage() {
       {data && (
         <>
           <Overview summary={data.summary} />
-          {shared && <Contributions data={shared} />}
           {shared && (
             <p className="px-1 text-sm text-muted-foreground">
-              Only lines you share appear here, split evenly between you. Half of each shared expense and savings line also
-              shows up in your personal budget.
+              Only lines you share appear here, at full value. Set how each one splits between you (100/100 counts it fully
+              for both). Your share of every line also shows up in your personal budget.
             </p>
           )}
           {!ownLines.length && (
@@ -275,7 +239,7 @@ export function BudgetPage() {
                     kind={kind}
                     lines={data.lines.filter((l) => l.kind === kind)}
                     summary={data.summary}
-                    shared={!!shared}
+                    members={shared?.members}
                     {...handlers(kind)}
                   />
                 ))}
