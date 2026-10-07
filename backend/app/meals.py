@@ -6,7 +6,7 @@ from itertools import groupby
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator
 from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, UniqueConstraint, delete, select
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -48,6 +48,19 @@ def week_dates(week_start: date) -> list[date]:
 
 def _by_day(e: MealEntry):
     return e.date, list(Slot).index(Slot(e.slot))
+
+
+def pantry_remainder(have: list[GroceryItem], bought: list[GroceryItem], used: list[GroceryItem]) -> list[GroceryItem]:
+    """have + bought - used, matched by name and unit ignoring case; anything used up is dropped."""
+    # ponytail: exact name/unit match, while the shopping agent matches by meaning ("pasta" covers
+    # "spaghetti", 1 kg covers 500 g). Mismatched spellings or units don't come off; an agent step if that bites.
+    left: dict[tuple[str, str], list] = {}
+    for sign, items in ((1, have), (1, bought), (-1, used)):
+        for i in items:
+            row = left.setdefault((i.name.strip().lower(), i.unit.strip().lower()), [i.name, i.unit, 0.0])
+            row[2] += sign * i.quantity
+    # Rounded so float noise (0.1 + 0.2) neither shows nor keeps a used-up item alive.
+    return [GroceryItem(name=n, quantity=round(q, 3), unit=u) for n, u, q in left.values() if round(q, 3) > 0]
 
 
 def day_plans(entries: list[MealEntry]) -> list[DayPlan]:
@@ -141,10 +154,22 @@ def _pantry(db: Session, user: User) -> list[GroceryItem]:
     return [GroceryItem(name=r.name, quantity=r.quantity, unit=r.unit) for r in rows]
 
 
-def _week_plans(db: Session, user: User, week_start: date) -> list[DayPlan]:
+def _save_pantry(db: Session, user: User, items: list[GroceryItem]) -> GroceryList:
+    db.execute(delete(PantryItem).where(PantryItem.user_id == user.id))
+    db.add_all(PantryItem(user_id=user.id, **i.model_dump()) for i in items)
+    db.commit()
+    return GroceryList(items=_pantry(db, user))
+
+
+def _shopping(user: User, ag, plans: list[DayPlan], have: list[GroceryItem]) -> ShoppingOut:
+    needed = _ask(ag.groceries_needed, plans, user.household_size)
+    return ShoppingOut(needed=needed, shopping=_ask(ag.shopping_list, needed, have))
+
+
+def _week_plans(db: Session, user: User, week_start: date, empty="Add some meals to this week first") -> list[DayPlan]:
     plans = day_plans(_entries(db, user, week_start, week_start + timedelta(days=7)))
     if not plans:
-        raise HTTPException(400, "Add some meals to this week first")
+        raise HTTPException(400, empty)
     return plans
 
 
@@ -182,10 +207,21 @@ def get_pantry(user: CurrentUser, db: DB):
 
 @router.put("/pantry", response_model=GroceryList)
 def put_pantry(body: PantryIn, user: CurrentUser, db: DB):
-    db.execute(delete(PantryItem).where(PantryItem.user_id == user.id))
-    db.add_all(PantryItem(user_id=user.id, **i.model_dump()) for i in body.items)
-    db.commit()
-    return GroceryList(items=_pantry(db, user))
+    return _save_pantry(db, user, body.items)
+
+
+@router.post("/pantry/generate", response_model=GroceryList)
+def generate_pantry(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
+    """Last week's pantry plus its shopping list, minus the groceries its meals used."""
+    plans = _week_plans(db, user, body.week_start, "No meals were planned last week")
+    have = _pantry(db, user)
+    week = _shopping(user, ag, plans, have)
+    remainder = pantry_remainder(have, week.shopping.items, week.needed.items)
+    try:  # agent items skip PantryItemIn's column limits until here
+        items = PantryIn(items=[i.model_dump() for i in remainder]).items
+    except ValidationError:
+        raise HTTPException(502, "The meal assistant returned an item the pantry can't hold. Please try again.")
+    return _save_pantry(db, user, items)
 
 
 @router.post("/meals/groceries-needed", response_model=GroceryList)
@@ -195,8 +231,7 @@ def groceries_needed(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
 
 @router.post("/meals/shopping-list", response_model=ShoppingOut)
 def shopping_list(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
-    needed = _ask(ag.groceries_needed, _week_plans(db, user, body.week_start), user.household_size)
-    return ShoppingOut(needed=needed, shopping=_ask(ag.shopping_list, needed, _pantry(db, user)))
+    return _shopping(user, ag, _week_plans(db, user, body.week_start), _pantry(db, user))
 
 
 @router.post("/meals/generate", response_model=list[MealOut])
