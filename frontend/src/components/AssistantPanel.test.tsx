@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '@/lib/api'
@@ -125,5 +125,125 @@ describe('AssistantPanel', () => {
     await userEvent.keyboard('{Escape}')
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(trigger).toHaveFocus()
+  })
+
+  describe('by voice', () => {
+    class FakeRecognition {
+      static last: FakeRecognition
+      lang = ''
+      interimResults = false
+      onresult: ((e: unknown) => void) | null = null
+      onerror: ((e: unknown) => void) | null = null
+      onend: (() => void) | null = null
+      start = vi.fn()
+      stop = vi.fn(() => this.onend?.())
+      abort = vi.fn()
+      constructor() {
+        FakeRecognition.last = this
+      }
+      // Result and end in one go, as Chrome often delivers them, before React re-renders.
+      hear(transcript: string) {
+        act(() => {
+          this.onresult?.({ results: [Object.assign([{ transcript }], { isFinal: true })] })
+          this.onend?.()
+        })
+      }
+    }
+    const synth = { speak: vi.fn(), cancel: vi.fn(), getVoices: () => [] }
+    const said = () => synth.speak.mock.calls.map(([u]) => u.text).filter(Boolean).join(' ')
+
+    beforeEach(() => {
+      synth.speak.mockReset()
+      synth.cancel.mockReset()
+      vi.stubGlobal('webkitSpeechRecognition', FakeRecognition)
+      vi.stubGlobal('speechSynthesis', synth)
+      vi.stubGlobal('SpeechSynthesisUtterance', class { rate = 1; voice = null; constructor(text: string) { Object.assign(this, { text }) } })
+    })
+    const talk = async () => userEvent.click(await screen.findByRole('button', { name: 'Talk to Mikayla' }))
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('sends what you said and reads the reply out exactly as it prints', async () => {
+      const sent: unknown[] = []
+      setup(({ json }) => {
+        sent.push(structuredClone(json))
+        return { reply: 'Bins are due Tuesday. Want a reminder?', changed: false }
+      })
+      await userEvent.click(await screen.findByRole('button', { name: 'Talk to Mikayla' }))
+      expect(FakeRecognition.last.start).toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Talk to Mikayla' })).toHaveAttribute('aria-pressed', 'true')
+      FakeRecognition.last.hear('When are bins due')
+      expect(await screen.findByText('Bins are due Tuesday. Want a reminder?')).toBeInTheDocument()
+      expect(sent).toEqual([expect.objectContaining({ messages: [{ role: 'user', content: 'When are bins due' }] })])
+      expect(said()).toBe('Bins are due Tuesday. Want a reminder?')
+      expect(screen.getByRole('button', { name: 'Talk to Mikayla' })).toHaveAttribute('aria-pressed', 'false')
+      expect(await box()).toHaveValue('')
+    })
+
+    it('adds what you say to what you typed, and holds typed sends while listening', async () => {
+      const sent: unknown[] = []
+      setup(({ json }) => {
+        sent.push(structuredClone(json))
+        return { reply: 'Done.', changed: false }
+      })
+      await userEvent.type(await box(), 'Bins:')
+      await talk()
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+      await userEvent.type(await box(), '{Enter}')
+      expect(sent).toEqual([])
+      FakeRecognition.last.hear('mark them done')
+      expect(await screen.findByText('Done.')).toBeInTheDocument()
+      expect(sent).toEqual([expect.objectContaining({ messages: [{ role: 'user', content: 'Bins: mark them done' }] })])
+    })
+
+    it("can't listen while she is thinking, and drops a reply once you have moved on", async () => {
+      let reply!: (r: unknown) => void
+      setup(() => new Promise((r) => (reply = r)), '/calendar', { 'GET /api/chores/today?date=2026-03-10': [] })
+      await talk()
+      FakeRecognition.last.hear('Anything today')
+      expect(await screen.findByText('Thinking…')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Talk to Mikayla' })).toBeDisabled()
+      await userEvent.click(screen.getByRole('link', { name: 'Account' }))
+      await screen.findByRole('heading', { level: 1, name: 'Account' })
+      await act(async () => reply({ reply: 'Nothing today.', changed: false }))
+      expect(said()).toBe('')
+    })
+
+    it('can be stopped mid-reply', async () => {
+      setup(() => ({ reply: 'A long answer.', changed: false }))
+      await talk()
+      FakeRecognition.last.hear('Tell me everything')
+      const stop = await screen.findByRole('button', { name: 'Stop talking' })
+      const cancels = synth.cancel.mock.calls.length
+      await userEvent.click(stop)
+      expect(synth.cancel).toHaveBeenCalledTimes(cancels + 1)
+      expect(screen.queryByRole('button', { name: 'Stop talking' })).not.toBeInTheDocument()
+    })
+
+    it('stays quiet for typed messages, and talking again cuts her off', async () => {
+      setup(() => ({ reply: 'Sure.', changed: false }))
+      await userEvent.type(await box(), 'Hi{Enter}')
+      expect(await screen.findByText('Sure.')).toBeInTheDocument()
+      expect(synth.speak).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Talk to Mikayla' }))
+      expect(synth.cancel).toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Talk to Mikayla' }))
+      expect(FakeRecognition.last.stop).toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Talk to Mikayla' })).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('says when the microphone is blocked', async () => {
+      setup(() => ({ reply: 'ok', changed: false }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Talk to Mikayla' }))
+      act(() => FakeRecognition.last.onerror?.({ error: 'not-allowed' }))
+      act(() => FakeRecognition.last.onend?.())
+      expect(await screen.findByRole('alert')).toHaveTextContent('Allow microphone access to talk to Mikayla.')
+      expect(vi.mocked(api).mock.calls.some(([p]) => p === '/api/assistant')).toBe(false)
+    })
+  })
+
+  it('has no microphone button where the browser cannot listen', async () => {
+    setup(() => ({ reply: 'ok', changed: false }))
+    await box()
+    expect(screen.queryByRole('button', { name: 'Talk to Mikayla' })).not.toBeInTheDocument()
   })
 })

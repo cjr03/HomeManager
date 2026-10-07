@@ -1,5 +1,5 @@
-import { Loader2, Send, X } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Loader2, Mic, Send, VolumeX, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 import { errorText, FormError } from '@/components/Field'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { assistantTarget } from '@/lib/assistant'
 import { useAuth } from '@/lib/auth'
 import { today } from '@/lib/month'
 import { cn } from '@/lib/utils'
+import { prime, recognizer, speak, type Recognition } from '@/lib/voice'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
@@ -31,17 +32,42 @@ export function AssistantPanel() {
   const [busyPage, setBusyPage] = useState<string | null>(null) // the page waiting on a reply
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
   const list = useRef<HTMLUListElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const wasOpen = useRef(false)
+  const recognition = useRef<Recognition | null>(null)
+  const turn = useRef(0) // bumped whenever voice stops, so a reply still on its way isn't read out
+  const latestSend = useRef(send) // recognition outlives the render that started it
   const messages = histories[page] ?? []
   const busy = busyPage === page
 
-  useEffect(() => setError(''), [page])
+  // Stop listening and talking, without sending what was heard.
+  function quiet() {
+    turn.current++
+    const r = recognition.current
+    recognition.current = null
+    if (r) {
+      r.onend = null
+      r.abort()
+    }
+    window.speechSynthesis?.cancel()
+    setListening(false)
+    setSpeaking(false)
+  }
+
+  useEffect(() => {
+    setError('')
+    return quiet // on leaving the page, and on logout
+  }, [page])
   // The sheet below xl: focus moves in on open and back to the trigger on close; Escape closes it from anywhere.
   useEffect(() => {
     if (open) document.getElementById('assistant-message')?.focus()
-    else if (wasOpen.current) trigger.current?.focus()
+    else if (wasOpen.current) {
+      trigger.current?.focus()
+      quiet()
+    }
     wasOpen.current = open
     if (!open) return
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
@@ -54,10 +80,9 @@ export function AssistantPanel() {
 
   if (!(page in HINTS)) return null
 
-  async function send(e?: FormEvent) {
-    e?.preventDefault()
-    const content = draft.trim()
-    if (!content || busy) return
+  async function send(content = draft.trim(), spoken = false) {
+    if (!content || busy || (listening && !spoken)) return
+    const sentTurn = turn.current
     const sent = [...messages, { role: 'user' as const, content }]
     const set = (m: Message[]) => setHistories((h) => ({ ...h, [page]: m }))
     set(sent)
@@ -77,6 +102,10 @@ export function AssistantPanel() {
         },
       })
       set([...sent, { role: 'assistant', content: res.reply }])
+      if (spoken && sentTurn === turn.current) {
+        setSpeaking(true)
+        speak(res.reply, () => sentTurn === turn.current && setSpeaking(false))
+      }
       if (res.changed) {
         assistantTarget().onChanged() // the page showing now, which may have remounted since sending
         await refresh()
@@ -88,6 +117,40 @@ export function AssistantPanel() {
     } finally {
       setBusyPage((p) => (p === page ? null : p))
     }
+  }
+
+  latestSend.current = send
+
+  // Talking interrupts her. What was heard is added to the box as you speak and sends itself once you stop.
+  function listen() {
+    if (recognition.current) return recognition.current.stop()
+    turn.current++
+    prime()
+    setSpeaking(false)
+    const Recognizer = recognizer()!
+    const r = new Recognizer()
+    const typed = draft.trim()
+    let heard = ''
+    r.lang = 'en-US'
+    r.interimResults = true
+    r.onresult = (e) => {
+      heard = `${typed} ${Array.from(e.results, (result) => result[0].transcript).join('')}`.trim()
+      setDraft(heard)
+    }
+    r.onerror = (e) => {
+      heard = ''
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setError('Allow microphone access to talk to Mikayla.')
+      else if (e.error !== 'no-speech' && e.error !== 'aborted') setError("Couldn't hear that. Try again or type it.")
+    }
+    r.onend = () => {
+      recognition.current = null
+      setListening(false)
+      if (heard) void latestSend.current(heard, true)
+    }
+    recognition.current = r
+    setError('')
+    setListening(true)
+    r.start()
   }
 
   return (
@@ -113,6 +176,11 @@ export function AssistantPanel() {
           <div className="flex items-center gap-2 px-4">
             <img src={mikayla} alt="" className="size-8 rounded-full object-cover" />
             <h2 className="flex-1 font-semibold">Mikayla</h2>
+            {speaking && (
+              <Button variant="ghost" size="icon-sm" className="rounded-full" aria-label="Stop talking" onClick={quiet}>
+                <VolumeX />
+              </Button>
+            )}
             <Button variant="ghost" size="icon-sm" className="rounded-full xl:hidden" aria-label="Close Mikayla" onClick={() => setOpen(false)}>
               <X />
             </Button>
@@ -136,7 +204,13 @@ export function AssistantPanel() {
               </li>
             )}
           </ul>
-          <form onSubmit={send} className="space-y-2 px-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              void send()
+            }}
+            className="space-y-2 px-4"
+          >
             <FormError>{error}</FormError>
             <div className="flex items-end gap-2">
               <label htmlFor="assistant-message" className="sr-only">
@@ -146,7 +220,7 @@ export function AssistantPanel() {
                 id="assistant-message"
                 rows={1}
                 maxLength={MAX_LENGTH}
-                placeholder="Ask or tell me what to change"
+                placeholder={listening ? 'Listening…' : 'Ask or tell me what to change'}
                 className="max-h-32 min-h-10 resize-none"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -157,7 +231,21 @@ export function AssistantPanel() {
                   }
                 }}
               />
-              <Button type="submit" size="icon" className="shrink-0 rounded-full" aria-label="Send" disabled={busy || !draft.trim()}>
+              {recognizer() && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={listening ? 'default' : 'outline'}
+                  className={cn('shrink-0 rounded-full', listening && 'animate-pulse')}
+                  aria-label="Talk to Mikayla"
+                  aria-pressed={listening}
+                  disabled={busy}
+                  onClick={listen}
+                >
+                  <Mic />
+                </Button>
+              )}
+              <Button type="submit" size="icon" className="shrink-0 rounded-full" aria-label="Send" disabled={busy || listening || !draft.trim()}>
                 <Send />
               </Button>
             </div>
