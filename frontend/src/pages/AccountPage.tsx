@@ -4,12 +4,14 @@ import { toast } from 'sonner'
 import { errorText, Field, FormError } from '@/components/Field'
 import { HouseholdInput, PreferencesFields } from '@/components/ProfileFields'
 import { UserAvatar } from '@/components/UserAvatar'
+import { ChoreCheck, type Occurrence } from '@/components/ChoreCheck'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
 import { useAuth, useUser } from '@/lib/auth'
+import { today } from '@/lib/month'
 
 const MAX_AVATAR_BYTES = 1024 * 1024
 
@@ -301,6 +303,33 @@ function LinksCard() {
   )
 }
 
+function TodayChoresCard() {
+  const [chores, setChores] = useState<Occurrence[] | null>(null)
+  useEffect(() => {
+    api<Occurrence[]>(`/api/chores/today?date=${today()}`)
+      .then(setChores)
+      .catch(() => setChores([]))
+  }, [])
+  const set = (chore: Occurrence, done: boolean) =>
+    setChores((cs) => cs!.map((c) => (c.chore_id === chore.chore_id ? { ...c, done } : c)))
+
+  return (
+    <Card>
+      <SectionTitle description="Your chores for today, from you and linked accounts.">Today&apos;s chores</SectionTitle>
+      <CardContent>
+        {chores?.length === 0 && <p className="text-sm text-muted-foreground">Nothing due today.</p>}
+        <ul>
+          {chores?.map((c) => (
+            <li key={c.chore_id}>
+              <ChoreCheck chore={c} onChange={(done) => set(c, done)} />
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function AccountPage() {
   return (
     <div className="space-y-6">
@@ -310,6 +339,7 @@ export function AccountPage() {
       </div>
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_1.2fr]">
         <div className="space-y-6">
+          <TodayChoresCard />
           <ProfileCard />
           <LinksCard />
         </div>

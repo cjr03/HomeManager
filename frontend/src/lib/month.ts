@@ -34,3 +34,12 @@ export function monthLabel(month: string): string {
   const { y, m } = parse(month)
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 }
+
+/** Local calendar date as "YYYY-MM-DD". */
+export function today(now = new Date()): string {
+  return `${currentMonth(now)}-${pad(now.getDate())}`
+}
+
+export function formatDay(day: string, options: Intl.DateTimeFormatOptions): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { ...options, timeZone: 'UTC' })
+}
