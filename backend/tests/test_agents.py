@@ -195,6 +195,13 @@ def test_get_client_real(monkeypatch):
     assert isinstance(get_client(), anthropic.Anthropic)
 
 
+def test_missing_api_key_is_agent_error(monkeypatch):
+    for var in ("LLM_FAKE", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(AgentError):
+        groceries_needed(WEEK, 1)
+
+
 @pytest.fixture
 def fake_mode(monkeypatch):
     monkeypatch.setenv("LLM_FAKE", "1")

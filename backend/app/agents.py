@@ -185,7 +185,7 @@ def _call[T: BaseModel](client, system: str, data: dict, output: type[T]) -> T:
             messages=[{"role": "user", "content": f"<input_json>\n{payload}\n</input_json>"}],
             output_format=output,
         )
-    except (anthropic.AnthropicError, ValidationError) as e:
+    except (anthropic.AnthropicError, ValidationError, TypeError) as e:  # TypeError: no credentials
         raise AgentError("The meal assistant is unavailable right now. Please try again.") from e
     if response.parsed_output is None:
         raise AgentError(f"The meal assistant could not complete the request ({response.stop_reason}).")
