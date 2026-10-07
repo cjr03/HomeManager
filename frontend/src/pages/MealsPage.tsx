@@ -1,6 +1,6 @@
 import { Copy, Loader2, ShoppingCart, Sparkles, Users } from 'lucide-react'
 import { useCallback, useEffect, useReducer, useState, type ReactNode } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { DayDialog, fmtItem, longDate, SLOTS, type Item, type Meal, type Slot } from '@/components/DayDialog'
 import { errorText } from '@/components/Field'
@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils'
 
 type ShoppingItem = Item & { category: string }
 type Agent = 'generate' | 'shopping'
-type ShoppingOut = { needed: { items: Item[] }; shopping: { items: ShoppingItem[] } }
+type ShoppingOut = { needed: { items: Item[] }; shopping: { items: ShoppingItem[] }; done: number[] }
 type DayMeals = Partial<Record<Slot, Meal>>
 
 const CATEGORIES = ['produce', 'dairy', 'meat', 'seafood', 'bakery', 'pantry', 'frozen', 'beverages', 'other']
@@ -278,8 +278,7 @@ function GenerateDialog({ week, onClose, onGenerate }: { week: string; onClose: 
   )
 }
 
-function ShoppingListCard({ items }: { items: ShoppingItem[] }) {
-  const [done, setDone] = useState<Set<number>>(new Set())
+function ShoppingListCard({ items, done, onToggle }: { items: ShoppingItem[]; done: number[]; onToggle: (n: number) => void }) {
   const groups = groupByCategory(items)
 
   async function copy() {
@@ -295,7 +294,7 @@ function ShoppingListCard({ items }: { items: ShoppingItem[] }) {
   return (
     <SectionCard
       title="Shopping list"
-      description={items.length ? `${items.length - done.size} of ${items.length} left to buy` : undefined}
+      description={items.length ? `${items.length - done.length} of ${items.length} left to buy` : undefined}
       action={
         items.length > 0 && (
           <Button variant="outline" size="sm" className="rounded-full" onClick={copy}>
@@ -316,8 +315,8 @@ function ShoppingListCard({ items }: { items: ShoppingItem[] }) {
                   <input
                     type="checkbox"
                     className="size-4 accent-primary"
-                    checked={done.has(n)}
-                    onChange={() => setDone((d) => new Set(d.has(n) ? [...d].filter((x) => x !== n) : [...d, n]))}
+                    checked={done.includes(n)}
+                    onChange={() => onToggle(n)}
                   />
                   {fmtItem(item)}
                 </label>
@@ -331,15 +330,18 @@ function ShoppingListCard({ items }: { items: ShoppingItem[] }) {
 }
 
 export function MealsPage() {
-  const [month, setMonth] = useState(currentMonth)
+  // Month and week live in the URL so a reload reopens the same week and its shopping list.
+  const [params, setParams] = useSearchParams()
+  const month = params.get('month') ?? currentMonth()
+  const week = params.get('week') ?? weekStart(today())
+  const show = (m: string, w: string) => setParams({ month: m, week: w }, { replace: true })
   const [meals, setMeals] = useState<Meal[]>([])
-  const [week, setWeek] = useState(() => weekStart(today()))
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [busy, setBusy] = useState<Agent | null>(null)
   const [needed, setNeeded] = useState<Item[] | null>(null)
   const [shopping, setShopping] = useState<ShoppingItem[] | null>(null)
-  const [builds, setBuilds] = useState(0) // remounts the shopping card so check-offs reset, as does a changed list
+  const [bought, setBought] = useState<number[]>([])
   const [version, reload] = useReducer((n: number) => n + 1, 0) // bumped when the assistant changes data
   useAssistant({ week_start: week }, reload)
 
@@ -363,6 +365,7 @@ export function MealsPage() {
         if (stale || !r) return
         setNeeded(r.needed.items)
         setShopping(r.shopping.items)
+        setBought(r.done)
       })
       .catch((err) => toast.error(errorText(err)))
     return () => {
@@ -374,8 +377,7 @@ export function MealsPage() {
   for (const m of meals) byDay.set(m.date, { ...byDay.get(m.date), [m.slot]: m })
 
   function changeMonth(m: string) {
-    setMonth(m)
-    setWeek(weekStart(m === currentMonth() ? today() : `${m}-01`))
+    show(m, weekStart(m === currentMonth() ? today() : `${m}-01`))
   }
 
   async function run(agent: Agent, call: () => Promise<void>) {
@@ -406,8 +408,16 @@ export function MealsPage() {
       })
       setNeeded(r.needed.items)
       setShopping(r.shopping.items)
-      setBuilds((n) => n + 1)
+      setBought(r.done)
     })
+
+  function toggleBought(index: number) {
+    const on = !bought.includes(index)
+    setBought((b) => (on ? [...b, index] : b.filter((x) => x !== index)))
+    api('/api/meals/shopping-list', { method: 'PATCH', json: { week_start: week, index, bought: on } }).catch((err) =>
+      toast.error(errorText(err)),
+    )
+  }
 
   const action = (agent: Agent, label: string, Icon: typeof Sparkles, onClick: () => void, primary = false) => (
     <Button
@@ -425,9 +435,9 @@ export function MealsPage() {
     // Phones stack month, week actions, results, then household and pantry; desktop has a side column.
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
       <div className="contents lg:block lg:space-y-6">
-        <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={setWeek} onOpen={setOpenDay} />
+        <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={(w) => show(month, w)} onOpen={setOpenDay} />
         <div className="order-3 space-y-6 empty:hidden">
-          {shopping && <ShoppingListCard key={`${builds}:${JSON.stringify(shopping)}`} items={shopping} />}
+          {shopping && <ShoppingListCard items={shopping} done={bought} onToggle={toggleBought} />}
           {needed && (
           <SectionCard title="Groceries needed" description={`Everything the meals for ${weekLabel(week)} call for.`}>
             <ul className="columns-1 gap-6 text-sm sm:columns-2">

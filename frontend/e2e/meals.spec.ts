@@ -55,6 +55,8 @@ test('plan a week: pantry, generate, edit a meal, build the shopping list, gener
   await expect(list).not.toContainText('Milk')
   await list.getByRole('checkbox', { name: /Onion/ }).check()
   await expect(list.getByRole('checkbox', { name: /Onion/ })).toBeChecked()
+  await page.reload() // the list and its check-offs are saved
+  await expect(list.getByRole('checkbox', { name: /Onion/ })).toBeChecked()
   await expect(page.getByRole('region', { name: 'Groceries needed' })).toContainText('2 l Milk')
 
   // The following week: last week's pantry + shopping - groceries needed leaves 1 l milk.
