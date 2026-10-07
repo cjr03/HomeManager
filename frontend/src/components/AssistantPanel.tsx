@@ -16,8 +16,8 @@ type Message = { role: 'user' | 'assistant'; content: string }
 const HINTS: Record<string, string> = {
   meals: 'Add to the pantry, change preferences, plan meals or build the shopping list.',
   budget: "Add, change or remove lines in this month's plan, what you own and what you owe, or ask about the numbers.",
-  calendar: 'Add, change or remove chores, and mark chores or events done.',
-  account: 'Mark chores done or change your household preferences.',
+  calendar: 'Add, change or remove chores, and mark chores, tasks or events done.',
+  account: "Mark today's chores or tasks done, or change your household preferences.",
 }
 const MAX_LENGTH = 4000
 
