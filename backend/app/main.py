@@ -1,7 +1,12 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from sqlalchemy import text
+
+# backend/.env (ANTHROPIC_API_KEY etc.); real env vars win. Loaded before app imports read the env.
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 from app import accounts, auth, budget, calendar, meals
 from app.db import Base, engine
