@@ -125,6 +125,10 @@ def chore(c, assignee_id, **kw):
     return c.post("/api/chores", json=body)
 
 
+def task(c, **kw):
+    return c.post("/api/tasks", json={"title": "Pay rent", "date": "2026-03-10"} | kw)
+
+
 @pytest.fixture
 def pair(make_user, client_for, db):
     ann, bob = make_user("ann"), make_user("bob")
@@ -148,6 +152,11 @@ def pair(make_user, client_for, db):
         ("post", "/api/chores/1/done/2026-03-02"),
         ("delete", "/api/chores/1/done/2026-03-02"),
         ("get", "/api/chores/today?date=2026-03-02"),
+        ("post", "/api/tasks"),
+        ("put", "/api/tasks/1"),
+        ("delete", "/api/tasks/1"),
+        ("post", "/api/tasks/1/done"),
+        ("delete", "/api/tasks/1/done"),
     ],
 )
 def test_requires_login(client, method, path):
@@ -405,3 +414,95 @@ def test_shared_chore_visible_to_linked_accounts_only(pair, make_user, client_fo
 
     ca.put(f"/api/chores/{cid}", json=body | {"shared": False})
     assert cb.get("/api/chores").json() == []
+
+
+# ---- tasks ----
+
+def test_task_crud(auth_client):
+    r = task(auth_client, notes="Online")
+    assert r.status_code == 201
+    t = r.json()
+    assert t | {"id": 0} == {
+        "id": 0, "owner_id": auth_client.user.id, "title": "Pay rent", "date": "2026-03-10",
+        "notes": "Online", "shared": False, "done": False,
+    }
+    assert auth_client.get("/api/calendar/2026-03").json()["tasks"] == [t]
+    assert auth_client.post(f"/api/tasks/{t['id']}/done").status_code == 204
+    r = auth_client.put(f"/api/tasks/{t['id']}", json={"title": "Pay bills", "date": "2026-04-01"})
+    assert r.status_code == 200
+    assert r.json() | {"id": 0} == {
+        "id": 0, "owner_id": auth_client.user.id, "title": "Pay bills", "date": "2026-04-01",
+        "notes": "", "shared": False, "done": True,  # editing keeps it done
+    }
+    assert auth_client.get("/api/calendar/2026-03").json()["tasks"] == []
+    assert [x["title"] for x in auth_client.get("/api/calendar/2026-04").json()["tasks"]] == ["Pay bills"]
+    assert auth_client.delete(f"/api/tasks/{t['id']}").status_code == 204
+    assert auth_client.get("/api/calendar/2026-04").json()["tasks"] == []
+
+
+def test_task_validation(auth_client):
+    assert task(auth_client, title="").status_code == 422
+    assert task(auth_client, title="x" * 201).status_code == 422
+    assert task(auth_client, date="2026-02-30").status_code == 422
+    assert auth_client.post("/api/tasks", json={"title": "No date"}).status_code == 422
+
+
+def test_task_done_toggle_is_idempotent(auth_client):
+    tid = task(auth_client).json()["id"]
+
+    def done():
+        return auth_client.get("/api/calendar/2026-03").json()["tasks"][0]["done"]
+
+    for _ in range(2):
+        assert auth_client.post(f"/api/tasks/{tid}/done").status_code == 204
+        assert done() is True
+    for _ in range(2):
+        assert auth_client.delete(f"/api/tasks/{tid}/done").status_code == 204
+        assert done() is False
+
+
+def test_tasks_sorted_by_date_then_creation(auth_client):
+    for title, day in [("b", "2026-03-05"), ("c", "2026-03-05"), ("a", "2026-03-01")]:
+        task(auth_client, title=title, date=day)
+    assert [t["title"] for t in auth_client.get("/api/calendar/2026-03").json()["tasks"]] == ["a", "b", "c"]
+
+
+def test_shared_tasks_visible_only_through_accepted_link(make_user, client_for, db):
+    ann, bob, cat, dan = (make_user(n) for n in ("ann", "bob", "cat", "dan"))
+    link(db, ann, bob)
+    link(db, ann, cat, "pending")
+    ca = client_for(ann)
+    task(ca, title="Shared", shared=True)
+    task(ca, title="Private")
+
+    def titles(user):
+        return [t["title"] for t in client_for(user).get("/api/calendar/2026-03").json()["tasks"]]
+
+    assert titles(ann) == ["Shared", "Private"]
+    assert titles(bob) == ["Shared"]
+    assert titles(cat) == []  # pending link
+    assert titles(dan) == []  # no link
+
+
+def test_linked_account_ticks_a_shared_task_but_only_the_owner_edits(pair, make_user, client_for):
+    ann, bob, ca, cb = pair
+    shared = task(ca, shared=True).json()["id"]
+    private = task(ca).json()["id"]
+    assert cb.post(f"/api/tasks/{shared}/done").status_code == 204
+    assert ca.get("/api/calendar/2026-03").json()["tasks"][0]["done"] is True
+    assert cb.delete(f"/api/tasks/{shared}/done").status_code == 204
+    assert cb.post(f"/api/tasks/{private}/done").status_code == 404
+    assert cb.put(f"/api/tasks/{shared}", json={"title": "x", "date": "2026-03-10"}).status_code == 404
+    assert cb.delete(f"/api/tasks/{shared}").status_code == 404
+    eve = client_for(make_user("eve"))
+    assert eve.post(f"/api/tasks/{shared}/done").status_code == 404
+    assert cb.post("/api/tasks/999999/done").status_code == 404
+
+
+def test_unlinking_hides_shared_tasks(pair, db):
+    ann, bob, ca, cb = pair
+    tid = task(ca, shared=True).json()["id"]
+    db.query(Link).delete()
+    db.flush()
+    assert cb.get("/api/calendar/2026-03").json()["tasks"] == []
+    assert cb.post(f"/api/tasks/{tid}/done").status_code == 404

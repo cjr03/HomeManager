@@ -21,6 +21,10 @@ const MONTH = {
     { id: 1, owner_id: USER.id, title: 'Dentist', date: '2026-03-10', start_time: '09:30:00', notes: '', shared: false },
     { id: 2, owner_id: 5, title: 'Party', date: '2026-03-14', start_time: null, notes: 'Bring cake', shared: true },
   ],
+  tasks: [
+    { id: 11, owner_id: USER.id, title: 'Pay rent', date: '2026-03-10', notes: 'Online', shared: false, done: false },
+    { id: 12, owner_id: 5, title: 'Book vet', date: '2026-03-11', notes: '', shared: true, done: true },
+  ],
   chores: [
     occ(3, 'Bins', '2026-03-10', true),
     occ(4, 'Dishes', '2026-03-14', false, ME),
@@ -63,6 +67,8 @@ describe('CalendarPage', () => {
     expect(within(tenth).getByText('Dentist')).toBeInTheDocument()
     expect(within(tenth).getByText('Bins').closest('li')).toHaveTextContent('Bins, done')
     expect(within(tenth).getByText('Bins').closest('li')!.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,eve')
+    expect(within(tenth).getByText('Pay rent').closest('li')).not.toHaveTextContent('done')
+    expect(within(await day('Wednesday, March 11')).getByText('Book vet').closest('li')).toHaveTextContent('Book vet, done')
 
     const fourteenth = await day('Saturday, March 14')
     expect(fourteenth).not.toHaveAttribute('aria-current')
@@ -81,6 +87,100 @@ describe('CalendarPage', () => {
     await userEvent.click(box)
     expect(api).toHaveBeenCalledWith('/api/chores/3/done/2026-03-10', { method: 'DELETE' })
     expect(box).not.toBeChecked()
+  })
+
+  it('ticks off a task in the day dialog; only my own tasks can be edited', async () => {
+    setup({ 'POST /api/tasks/11/done': undefined })
+    await userEvent.click(await day('Tuesday, March 10'))
+    const dialog = screen.getByRole('dialog', { name: 'Tuesday, March 10' })
+    const rent = within(dialog).getByRole('checkbox', { name: 'Pay rent' })
+    expect(rent).not.toBeChecked()
+    expect(within(dialog).getByText('Online')).toBeInTheDocument()
+    await userEvent.click(rent)
+    expect(api).toHaveBeenCalledWith('/api/tasks/11/done', { method: 'POST' })
+    expect(rent).toBeChecked()
+    expect(within(dialog).getByRole('button', { name: 'Edit Pay rent' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.click(await day('Wednesday, March 11'))
+    const eleventh = screen.getByRole('dialog', { name: 'Wednesday, March 11' })
+    expect(within(eleventh).getByRole('checkbox', { name: 'Book vet' })).toBeChecked()
+    expect(await within(eleventh).findByText('Shared by eve')).toBeInTheDocument()
+    expect(within(eleventh).queryByRole('button', { name: 'Edit Book vet' })).not.toBeInTheDocument()
+  })
+
+  it('reverts a task tick that fails to save', async () => {
+    setup({
+      'POST /api/tasks/11/done': () => {
+        throw new ApiError(404, 'Task not found')
+      },
+    })
+    await userEvent.click(await day('Tuesday, March 10'))
+    const rent = within(screen.getByRole('dialog')).getByRole('checkbox', { name: 'Pay rent' })
+    await userEvent.click(rent)
+    await vi.waitFor(() => expect(rent).not.toBeChecked())
+  })
+
+  it('adds a task from the day dialog', async () => {
+    setup({ 'POST /api/tasks': MONTH.tasks[0] })
+    await userEvent.click(await day('Thursday, March 12'))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('No tasks.')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add task' }))
+    expect(within(dialog).queryByLabelText('Time')).not.toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-03-12')
+    await userEvent.type(within(dialog).getByLabelText('Title'), ' Renew passport ')
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'Share with linked accounts' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save task' }))
+    expect(api).toHaveBeenCalledWith('/api/tasks', {
+      method: 'POST',
+      json: { title: 'Renew passport', date: '2026-03-12', notes: '', shared: true },
+    })
+  })
+
+  it('edits, moves and deletes my task', async () => {
+    setup({ 'PUT /api/tasks/11': MONTH.tasks[0], 'DELETE /api/tasks/11': undefined })
+    await userEvent.click(await day('Tuesday, March 10'))
+    const dialog = screen.getByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit Pay rent' }))
+    expect(within(dialog).getByLabelText('Notes')).toHaveValue('Online')
+    await userEvent.clear(within(dialog).getByLabelText('Date'))
+    await userEvent.type(within(dialog).getByLabelText('Date'), '2026-03-20')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save task' }))
+    expect(api).toHaveBeenCalledWith('/api/tasks/11', {
+      method: 'PUT',
+      json: { title: 'Pay rent', date: '2026-03-20', notes: 'Online', shared: false },
+    })
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete Pay rent' }))
+    expect(api).toHaveBeenCalledWith('/api/tasks/11', { method: 'DELETE' })
+  })
+
+  it('adds an event or a task on any date from the header', async () => {
+    setup({ 'POST /api/events': MONTH.events[0], 'POST /api/tasks': MONTH.tasks[0] })
+    await userEvent.click(await screen.findByRole('button', { name: 'Add event' }))
+    let dialog = screen.getByRole('dialog', { name: 'New event' })
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-03-10') // today
+    await userEvent.type(within(dialog).getByLabelText('Title'), 'Flight')
+    await userEvent.clear(within(dialog).getByLabelText('Date'))
+    await userEvent.type(within(dialog).getByLabelText('Date'), '2026-04-02')
+    await userEvent.type(within(dialog).getByLabelText('Time'), '07:15')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save event' }))
+    expect(api).toHaveBeenCalledWith('/api/events', {
+      method: 'POST',
+      json: { title: 'Flight', date: '2026-04-02', start_time: '07:15', notes: '', shared: false },
+    })
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    dialog = screen.getByRole('dialog', { name: 'New task' })
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-04-01') // first of the month shown
+    await userEvent.type(within(dialog).getByLabelText('Title'), 'Pack')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save task' }))
+    expect(api).toHaveBeenCalledWith('/api/tasks', {
+      method: 'POST',
+      json: { title: 'Pack', date: '2026-04-01', notes: '', shared: false },
+    })
   })
 
   it('lists overflowing items in the day dialog', async () => {
