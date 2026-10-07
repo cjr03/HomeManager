@@ -28,6 +28,17 @@ class Event(Base):
     shared: Mapped[bool] = mapped_column(default=False)
 
 
+class Task(Base):
+    __tablename__ = "tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    date: Mapped[dt.date]
+    notes: Mapped[str] = mapped_column(Text, default="")
+    shared: Mapped[bool] = mapped_column(default=False)
+    done: Mapped[bool] = mapped_column(default=False)
+
+
 class Chore(Base):
     __tablename__ = "chores"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -99,6 +110,20 @@ class EventOut(EventIn):
     owner_id: int
 
 
+class TaskIn(BaseModel):
+    title: Title
+    date: dt.date
+    notes: str = ""
+    shared: bool = False
+
+
+class TaskOut(TaskIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    owner_id: int
+    done: bool
+
+
 class ChoreIn(BaseModel):
     title: Title
     assignee_id: int
@@ -149,6 +174,7 @@ class Occurrence(BaseModel):
 
 class MonthOut(BaseModel):
     events: list[EventOut]
+    tasks: list[TaskOut]
     chores: list[Occurrence]
     people: list[Person]  # the chores' assignees, once each: avatars are large data URLs
 
@@ -160,6 +186,13 @@ def _my_event(db: Session, event_id: int, user: User) -> Event:
     if ev is None or ev.owner_id != user.id:
         raise HTTPException(404, "Event not found")
     return ev
+
+
+def _visible_task(db: Session, task_id: int, user: User, *, owner_only: bool = False) -> Task:
+    t = db.get(Task, task_id)
+    if t is None or not (t.owner_id == user.id or (not owner_only and t.shared and t.owner_id in linked_user_ids(db, user))):
+        raise HTTPException(404, "Task not found")
+    return t
 
 
 def _visible_chore(db: Session, chore_id: int, user: User, *, owner_only: bool = False) -> Chore:
@@ -224,9 +257,14 @@ def month_view(month: Month, user: CurrentUser, db: DB):
         )
         .order_by(Event.date, Event.start_time.nulls_first(), Event.id)
     )
+    tasks = db.scalars(
+        select(Task)
+        .where(Task.date.between(start, end), or_(Task.owner_id == user.id, and_(Task.shared, Task.owner_id.in_(linked))))
+        .order_by(Task.date, Task.id)
+    )
     chores = _chores_of(db, user)
     people = list({c.assignee_id: c.assignee for c in chores}.values())
-    return MonthOut(events=list(events), chores=_occurrences(db, chores, start, end), people=people)
+    return MonthOut(events=list(events), tasks=list(tasks), chores=_occurrences(db, chores, start, end), people=people)
 
 
 @router.post("/events", status_code=201, response_model=EventOut)
@@ -249,6 +287,41 @@ def update_event(event_id: int, body: EventIn, user: CurrentUser, db: DB):
 @router.delete("/events/{event_id}", status_code=204)
 def delete_event(event_id: int, user: CurrentUser, db: DB):
     db.delete(_my_event(db, event_id, user))
+    db.commit()
+
+
+@router.post("/tasks", status_code=201, response_model=TaskOut)
+def create_task(body: TaskIn, user: CurrentUser, db: DB):
+    t = Task(owner_id=user.id, **body.model_dump())
+    db.add(t)
+    db.commit()
+    return t
+
+
+@router.put("/tasks/{task_id}", response_model=TaskOut)
+def update_task(task_id: int, body: TaskIn, user: CurrentUser, db: DB):
+    t = _visible_task(db, task_id, user, owner_only=True)
+    for k, v in body.model_dump().items():
+        setattr(t, k, v)
+    db.commit()
+    return t
+
+
+@router.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int, user: CurrentUser, db: DB):
+    db.delete(_visible_task(db, task_id, user, owner_only=True))
+    db.commit()
+
+
+@router.post("/tasks/{task_id}/done", status_code=204)
+def task_done(task_id: int, user: CurrentUser, db: DB):
+    _visible_task(db, task_id, user).done = True
+    db.commit()
+
+
+@router.delete("/tasks/{task_id}/done", status_code=204)
+def task_undone(task_id: int, user: CurrentUser, db: DB):
+    _visible_task(db, task_id, user).done = False
     db.commit()
 
 

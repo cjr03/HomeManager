@@ -1,4 +1,4 @@
-import { Check, Pencil, Plus, Trash2, Users } from 'lucide-react'
+import { Check, Pencil, Plus, Square, SquareCheck, Trash2, Users } from 'lucide-react'
 import { useEffect, useReducer, useState, type FormEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { ChoreCheck, type Occurrence, type Person } from '@/components/ChoreCheck'
@@ -17,7 +17,10 @@ import { currentMonth, formatDay, monthGrid, today } from '@/lib/month'
 import { cn } from '@/lib/utils'
 
 type CalEvent = { id: number; owner_id: number; title: string; date: string; start_time: string | null; notes: string; shared: boolean }
-type MonthData = { events: CalEvent[]; chores: Occurrence[]; people: Person[] }
+type CalTask = { id: number; owner_id: number; title: string; date: string; notes: string; shared: boolean; done: boolean }
+type MonthData = { events: CalEvent[]; tasks: CalTask[]; chores: Occurrence[]; people: Person[] }
+type Kind = 'event' | 'task'
+const KIND_NAME = { event: 'Event', task: 'Task' }
 type Recurrence = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly'
 type Chore = {
   id: number
@@ -68,6 +71,17 @@ function EventPill({ event }: { event: CalEvent }) {
   )
 }
 
+function TaskPill({ task }: { task: CalTask }) {
+  const Box = task.done ? SquareCheck : Square
+  return (
+    <li className="flex min-w-0 items-center gap-1 rounded-md border border-dashed border-primary/40 px-1 py-0.5 text-xs">
+      <Box className="size-3 shrink-0 text-primary" aria-hidden />
+      <span className={cn('truncate', task.done && 'text-muted-foreground line-through')}>{task.title}</span>
+      {task.done && <span className="sr-only">, done</span>}
+    </li>
+  )
+}
+
 function ChorePill({ chore, assignee }: { chore: Occurrence; assignee?: Person }) {
   return (
     <li className="flex min-w-0 items-center gap-1 rounded-md border bg-card px-1 py-0.5 text-xs">
@@ -86,18 +100,21 @@ function ChorePill({ chore, assignee }: { chore: Occurrence; assignee?: Person }
 function DayCell({
   day,
   events,
+  tasks,
   chores,
   people,
   onOpen,
 }: {
   day: string
   events: CalEvent[]
+  tasks: CalTask[]
   chores: Occurrence[]
   people: Person[]
   onOpen: () => void
 }) {
   const items = [
     ...events.map((e) => <EventPill key={`e${e.id}`} event={e} />),
+    ...tasks.map((t) => <TaskPill key={`t${t.id}`} task={t} />),
     ...chores.map((c) => <ChorePill key={`c${c.chore_id}`} chore={c} assignee={people.find((p) => p.id === c.assignee_id)} />),
   ]
   const shown = items.length > MAX_IN_CELL ? MAX_IN_CELL - 1 : items.length
@@ -120,6 +137,9 @@ function DayCell({
         <span aria-hidden className="mt-auto flex flex-wrap gap-0.5 px-0.5 sm:hidden">
           {events.map((e) => (
             <span key={`e${e.id}`} className="size-1.5 rounded-full bg-primary" />
+          ))}
+          {tasks.map((t) => (
+            <span key={`t${t.id}`} className={cn('size-1.5 rounded-[2px] border border-primary', t.done && 'bg-primary/40')} />
           ))}
           {chores.map((c) => (
             <span key={`c${c.chore_id}`} className={cn('size-1.5 rounded-full border border-primary', c.done && 'bg-primary/40')} />
@@ -146,21 +166,24 @@ function ShareToggle({ checked, onChange }: { checked: boolean; onChange: (share
   )
 }
 
-function EventForm({ event, day, onDone }: { event: CalEvent | null; day: string; onDone: (saved: boolean) => void }) {
+/** Adds or edits an event or a task. Only events have a time. */
+function ItemForm({ kind, item, day, onDone }: { kind: Kind; item: CalEvent | CalTask | null; day: string; onDone: (saved: boolean) => void }) {
   const [form, setForm] = useState({
-    title: event?.title ?? '',
-    start_time: hhmm(event?.start_time ?? null),
-    notes: event?.notes ?? '',
-    shared: event?.shared ?? false,
+    title: item?.title ?? '',
+    date: item?.date ?? day,
+    start_time: item && 'start_time' in item ? hhmm(item.start_time) : '',
+    notes: item?.notes ?? '',
+    shared: item?.shared ?? false,
   })
   const [error, setError] = useState('')
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    const json = { ...form, title: form.title.trim(), date: day, start_time: form.start_time || null }
+    const { start_time, ...rest } = form
+    const json = { ...rest, title: form.title.trim(), ...(kind === 'event' && { start_time: start_time || null }) }
     try {
-      await api(event ? `/api/events/${event.id}` : '/api/events', { method: event ? 'PUT' : 'POST', json })
-      toast.success(event ? 'Event updated' : 'Event added')
+      await api(item ? `/api/${kind}s/${item.id}` : `/api/${kind}s`, { method: item ? 'PUT' : 'POST', json })
+      toast.success(`${KIND_NAME[kind]} ${item ? 'updated' : 'added'}`)
       onDone(true)
     } catch (err) {
       setError(errorText(err))
@@ -169,19 +192,22 @@ function EventForm({ event, day, onDone }: { event: CalEvent | null; day: string
 
   return (
     <form onSubmit={submit} className="space-y-3 rounded-xl bg-muted/60 p-4 animate-in fade-in slide-in-from-top-2">
-      <div className="grid grid-cols-[1fr_auto] gap-3">
-        <Field id="event-title" label="Title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-        <Field id="event-time" label="Time" type="time" className="dark:scheme-dark" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+      <Field id={`${kind}-title`} label="Title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      <div className="grid grid-cols-2 gap-3">
+        <Field id={`${kind}-date`} label="Date" type="date" className="dark:scheme-dark" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+        {kind === 'event' && (
+          <Field id="event-time" label="Time" type="time" className="dark:scheme-dark" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+        )}
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="event-notes">Notes</Label>
-        <Textarea id="event-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+        <Label htmlFor={`${kind}-notes`}>Notes</Label>
+        <Textarea id={`${kind}-notes`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
       </div>
       <ShareToggle checked={form.shared} onChange={(shared) => setForm({ ...form, shared })} />
       <FormError>{error}</FormError>
       <div className="flex gap-2">
         <Button type="submit" className="rounded-full">
-          Save event
+          Save {kind}
         </Button>
         <Button type="button" variant="ghost" className="rounded-full" onClick={() => onDone(false)}>
           Cancel
@@ -200,6 +226,31 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
+/** Who shared someone else's event or task, or a Shared badge on mine. */
+function SharedNote({ item, people }: { item: CalEvent | CalTask; people: Person[] }) {
+  const me = useUser()
+  if (item.owner_id !== me.id)
+    return <p className="text-xs text-muted-foreground">Shared by {people.find((p) => p.id === item.owner_id)?.username ?? 'a linked account'}</p>
+  return item.shared ? (
+    <Badge variant="secondary" className="mt-1">
+      <Users /> Shared
+    </Badge>
+  ) : null
+}
+
+function OwnerActions({ title, onEdit, onDelete }: { title: string; onEdit: () => void; onDelete: () => void }) {
+  return (
+    <div className="flex">
+      <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label={`Edit ${title}`} onClick={onEdit}>
+        <Pencil />
+      </Button>
+      <Button size="icon-sm" variant="ghost" className="rounded-full text-destructive" aria-label={`Delete ${title}`} onClick={onDelete}>
+        <Trash2 />
+      </Button>
+    </div>
+  )
+}
+
 function DayDialog({
   day,
   data,
@@ -207,6 +258,7 @@ function DayDialog({
   onClose,
   onChanged,
   onToggled,
+  onTaskToggled,
 }: {
   day: string | null
   data: MonthData
@@ -214,21 +266,52 @@ function DayDialog({
   onClose: () => void
   onChanged: () => void
   onToggled: (chore: Occurrence, done: boolean) => void
+  onTaskToggled: (task: CalTask, done: boolean) => void
 }) {
   const me = useUser()
-  const [editing, setEditing] = useState<CalEvent | 'new' | null>(null)
+  const [editing, setEditing] = useState<{ kind: Kind; item: CalEvent | CalTask | null } | null>(null)
   const events = data.events.filter((e) => e.date === day)
+  const tasks = data.tasks.filter((t) => t.date === day)
   const chores = data.chores.filter((c) => c.date === day)
 
-  async function remove(event: CalEvent) {
+  async function remove(kind: Kind, item: CalEvent | CalTask) {
     try {
-      await api(`/api/events/${event.id}`, { method: 'DELETE' })
-      toast.success('Event deleted')
+      await api(`/api/${kind}s/${item.id}`, { method: 'DELETE' })
+      toast.success(`${KIND_NAME[kind]} deleted`)
       onChanged()
     } catch (err) {
       toast.error(errorText(err))
     }
   }
+
+  // Optimistic, like ChoreCheck: flip now, flip back if the save fails.
+  async function toggle(task: CalTask, done: boolean) {
+    onTaskToggled(task, done)
+    try {
+      await api(`/api/tasks/${task.id}/done`, { method: done ? 'POST' : 'DELETE' })
+    } catch (err) {
+      onTaskToggled(task, !done)
+      toast.error(errorText(err))
+    }
+  }
+
+  const formOrAdd = (kind: Kind) =>
+    editing?.kind === kind ? (
+      <ItemForm
+        key={editing.item?.id ?? 'new'}
+        kind={kind}
+        item={editing.item}
+        day={day!}
+        onDone={(saved) => {
+          setEditing(null)
+          if (saved) onChanged()
+        }}
+      />
+    ) : (
+      <Button variant="outline" size="sm" className="rounded-full" onClick={() => setEditing({ kind, item: null })}>
+        <Plus /> Add {kind}
+      </Button>
+    )
 
   return (
     <Dialog
@@ -245,65 +328,50 @@ function DayDialog({
           <DialogTitle className="text-xl">{day && longDay(day)}</DialogTitle>
         </DialogHeader>
         <Section title="Events">
-          {!events.length && !editing && <p className="text-sm text-muted-foreground">Nothing planned yet.</p>}
+          {!events.length && editing?.kind !== 'event' && <p className="text-sm text-muted-foreground">Nothing planned yet.</p>}
           <ul className="space-y-1">
-            {events.map((e) => {
-              const mine = e.owner_id === me.id
-              return (
-                <li key={e.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-muted/60">
-                  <span className="w-11 shrink-0 pt-0.5 text-sm font-semibold text-primary tabular-nums">
-                    {hhmm(e.start_time) || 'All day'}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{e.title}</p>
-                    {e.notes && <p className="text-sm whitespace-pre-line text-muted-foreground">{e.notes}</p>}
-                    {!mine ? (
-                      <p className="text-xs text-muted-foreground">
-                        Shared by {people.find((p) => p.id === e.owner_id)?.username ?? 'a linked account'}
-                      </p>
-                    ) : (
-                      e.shared && (
-                        <Badge variant="secondary" className="mt-1">
-                          <Users /> Shared
-                        </Badge>
-                      )
-                    )}
-                  </div>
-                  {mine && (
-                    <div className="flex">
-                      <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label={`Edit ${e.title}`} onClick={() => setEditing(e)}>
-                        <Pencil />
-                      </Button>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        className="rounded-full text-destructive"
-                        aria-label={`Delete ${e.title}`}
-                        onClick={() => remove(e)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              )
-            })}
+            {events.map((e) => (
+              <li key={e.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-muted/60">
+                <span className="w-11 shrink-0 pt-0.5 text-sm font-semibold text-primary tabular-nums">
+                  {hhmm(e.start_time) || 'All day'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{e.title}</p>
+                  {e.notes && <p className="text-sm whitespace-pre-line text-muted-foreground">{e.notes}</p>}
+                  <SharedNote item={e} people={people} />
+                </div>
+                {e.owner_id === me.id && (
+                  <OwnerActions title={e.title} onEdit={() => setEditing({ kind: 'event', item: e })} onDelete={() => remove('event', e)} />
+                )}
+              </li>
+            ))}
           </ul>
-          {editing ? (
-            <EventForm
-              key={editing === 'new' ? 'new' : editing.id}
-              event={editing === 'new' ? null : editing}
-              day={day!}
-              onDone={(saved) => {
-                setEditing(null)
-                if (saved) onChanged()
-              }}
-            />
-          ) : (
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setEditing('new')}>
-              <Plus /> Add event
-            </Button>
-          )}
+          {formOrAdd('event')}
+        </Section>
+        <Section title="Tasks">
+          {!tasks.length && editing?.kind !== 'task' && <p className="text-sm text-muted-foreground">No tasks.</p>}
+          <ul className="space-y-1">
+            {tasks.map((t) => (
+              <li key={t.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-muted/60">
+                <input
+                  type="checkbox"
+                  aria-label={t.title}
+                  checked={t.done}
+                  onChange={(e) => void toggle(t, e.target.checked)}
+                  className="mt-1 size-4 shrink-0 cursor-pointer accent-primary dark:scheme-dark"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className={cn('font-medium transition-colors', t.done && 'text-muted-foreground line-through')}>{t.title}</p>
+                  {t.notes && <p className="text-sm whitespace-pre-line text-muted-foreground">{t.notes}</p>}
+                  <SharedNote item={t} people={people} />
+                </div>
+                {t.owner_id === me.id && (
+                  <OwnerActions title={t.title} onEdit={() => setEditing({ kind: 'task', item: t })} onDelete={() => remove('task', t)} />
+                )}
+              </li>
+            ))}
+          </ul>
+          {formOrAdd('task')}
         </Section>
         {chores.length > 0 && (
           <Section title="Chores">
@@ -518,10 +586,12 @@ function ChoresCard({ chores, people, onChanged }: { chores: Chore[]; people: Pe
 
 export function CalendarPage() {
   const [month, setMonth] = useState(currentMonth)
-  const [data, setData] = useState<MonthData>({ events: [], chores: [], people: [] })
+  const [data, setData] = useState<MonthData>({ events: [], tasks: [], chores: [], people: [] })
   const [chores, setChores] = useState<Chore[]>([])
   const [people, setPeople] = useState<Person[]>([])
   const [openDay, setOpenDay] = useState<string | null>(null)
+  // Kind outlives `open` so the dialog keeps its title and form while it animates closed.
+  const [adding, setAdding] = useState<{ kind: Kind; open: boolean }>({ kind: 'event', open: false })
   const [version, reload] = useReducer((n: number) => n + 1, 0)
 
   useEffect(() => {
@@ -552,12 +622,23 @@ export function CalendarPage() {
       chores: d.chores.map((c) => (c.chore_id === chore.chore_id && c.date === chore.date ? { ...c, done } : c)),
     }))
 
+  const taskToggled = (task: CalTask, done: boolean) =>
+    setData((d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === task.id ? { ...t, done } : t)) }))
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-4">
           <h1>Calendar</h1>
-          <MonthNav month={month} onChange={setMonth} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setAdding({ kind: 'event', open: true })}>
+              <Plus /> Add event
+            </Button>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setAdding({ kind: 'task', open: true })}>
+              <Plus /> Add task
+            </Button>
+            <MonthNav month={month} onChange={setMonth} />
+          </div>
         </CardHeader>
         <CardContent className="px-3 sm:px-6">
           <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
@@ -574,6 +655,7 @@ export function CalendarPage() {
                     key={day}
                     day={day}
                     events={data.events.filter((e) => e.date === day)}
+                    tasks={data.tasks.filter((t) => t.date === day)}
                     chores={data.chores.filter((c) => c.date === day)}
                     people={data.people}
                     onOpen={() => setOpenDay(day)}
@@ -586,7 +668,31 @@ export function CalendarPage() {
         </CardContent>
       </Card>
       <ChoresCard chores={chores} people={people} onChanged={reload} />
-      <DayDialog day={openDay} data={data} people={people} onClose={() => setOpenDay(null)} onChanged={reload} onToggled={toggled} />
+      <DayDialog
+        day={openDay}
+        data={data}
+        people={people}
+        onClose={() => setOpenDay(null)}
+        onChanged={reload}
+        onToggled={toggled}
+        onTaskToggled={taskToggled}
+      />
+      <Dialog open={adding.open} onOpenChange={(open) => setAdding({ ...adding, open })}>
+        <DialogContent aria-describedby={undefined} className="max-h-[90svh] overflow-y-auto rounded-2xl bg-card sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl">New {adding.kind}</DialogTitle>
+          </DialogHeader>
+          <ItemForm
+            kind={adding.kind}
+            item={null}
+            day={month === currentMonth() ? today() : `${month}-01`}
+            onDone={(saved) => {
+              setAdding({ ...adding, open: false })
+              if (saved) reload()
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

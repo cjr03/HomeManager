@@ -32,6 +32,25 @@ test('create an event and see it on the grid', async ({ page }) => {
   await expect(today.getByText('09:30')).toBeVisible()
 })
 
+test('add a task from the header, tick it off, and it stays done', async ({ page }) => {
+  await signUp(page)
+  await page.goto('/calendar')
+  await page.getByRole('button', { name: 'Add task' }).click()
+  const form = page.getByRole('dialog', { name: 'New task' })
+  await form.getByLabel('Title').fill('Renew passport')
+  await form.getByRole('button', { name: 'Save task' }).click()
+  await expect(form).toBeHidden()
+  const today = page.locator('[aria-current="date"]')
+  await expect(today.getByText('Renew passport')).toBeVisible()
+
+  await today.click()
+  const box = page.getByRole('dialog').getByRole('checkbox', { name: 'Renew passport' })
+  await box.check()
+  await expect(box).toBeChecked()
+  await page.reload()
+  await expect(page.locator('[aria-current="date"] li', { hasText: 'Renew passport' })).toHaveText('Renew passport, done')
+})
+
 test('a weekly chore starting today shows on the right days', async ({ page }) => {
   await signUp(page)
   await page.goto('/calendar')
