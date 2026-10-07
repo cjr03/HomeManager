@@ -314,7 +314,7 @@ describe('MealsPage', () => {
       const qty = await screen.findByLabelText('Quantity of Milk')
       await userEvent.clear(qty)
       await userEvent.type(qty, '3')
-      await userEvent.type(screen.getByRole('textbox', { name: 'Message the assistant' }), 'Do it{Enter}')
+      await userEvent.type(screen.getByRole('textbox', { name: 'Message Mikayla' }), 'Do it{Enter}')
       await screen.findByText('Done.')
       await waitFor(() => expect(calls(SHOP)).toBe(2))
       await waitFor(() => expect(calls('/api/pantry')).toBe(2))

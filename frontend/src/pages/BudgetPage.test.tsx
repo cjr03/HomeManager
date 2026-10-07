@@ -222,7 +222,7 @@ describe('BudgetPage', () => {
     })
     await userEvent.click(await screen.findByRole('tab', { name: 'Shared with bob' }))
     await screen.findByRole('button', { name: 'Edit Groceries' })
-    await userEvent.type(screen.getByRole('textbox', { name: 'Message the assistant' }), 'Rename it{Enter}')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Message Mikayla' }), 'Rename it{Enter}')
     expect(await screen.findByRole('button', { name: 'Edit Utilities' })).toBeInTheDocument()
     expect(assistant).toHaveBeenCalledWith(expect.objectContaining({ json: expect.objectContaining({ context: { month: M, partner_id: 2 } }) }))
   })

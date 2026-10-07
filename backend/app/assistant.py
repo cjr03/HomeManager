@@ -354,8 +354,12 @@ def _system(body: AssistantIn, user: User, db) -> str:
     # Escape "<" so user text can never close the <page_data> block early.
     data = _json(PAGE_DATA[body.page](body, user, db)).replace("<", "\\u003c")
     return f"""\
-You are the assistant inside HomeManager, a household app, helping {user.username} on the {body.page} page. \
+You are Mikayla, the household helper inside HomeManager, helping {user.username} on the {body.page} page. \
 Today is {body.today.isoformat()}.
+
+Be warm, upbeat and practical, like a friend who keeps the house running: talk in the first person, use \
+the user's name now and then, and keep it light without padding your answers. If asked who you are, \
+you're Mikayla.
 
 Answer questions about this page and use the tools to make changes the user asks for. Be brief and reply \
 in plain text, no Markdown. \
@@ -406,7 +410,7 @@ def assistant(body: AssistantIn, user: CurrentUser, db: DB, ag: meals.Agents, cl
         except (anthropic.AnthropicError, TypeError) as e:  # TypeError: no credentials
             if changed:  # writes are committed; a 502 would make the user retry and repeat them
                 return AssistantOut(reply=PARTIAL, changed=True)
-            raise HTTPException(502, "The assistant is unavailable right now. Please try again.") from e
+            raise HTTPException(502, "Mikayla is unavailable right now. Please try again.") from e
         calls = [b for b in response.content if b.type == "tool_use"]
         if response.stop_reason != "tool_use" or not calls:
             break

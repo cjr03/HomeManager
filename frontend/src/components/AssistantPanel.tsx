@@ -1,9 +1,10 @@
-import { Bot, Loader2, MessageCircle, Send, X } from 'lucide-react'
+import { Loader2, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation } from 'react-router'
 import { errorText, FormError } from '@/components/Field'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import mikayla from '@/assets/mikayla.jpg'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import { assistantTarget } from '@/lib/assistant'
@@ -93,15 +94,15 @@ export function AssistantPanel() {
     <>
       <Button
         ref={trigger}
-        className="fixed right-4 bottom-24 z-40 size-12 rounded-full shadow-float sm:bottom-6 xl:hidden"
-        aria-label="Open assistant"
+        className="fixed right-4 bottom-24 z-40 size-12 overflow-hidden rounded-full p-0 shadow-float sm:bottom-6 xl:hidden"
+        aria-label="Open Mikayla"
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
-        <MessageCircle className="size-5" />
+        <img src={mikayla} alt="" className="size-full object-cover" />
       </Button>
       <aside
-        aria-label="Assistant"
+        aria-label="Mikayla"
         className={cn(
           'fixed inset-x-3 bottom-24 z-50 h-[min(28rem,calc(100svh-7rem))] sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-80',
           'xl:sticky xl:inset-auto xl:top-4 xl:z-auto xl:block xl:h-[min(32rem,calc(100svh-2rem))] xl:w-auto',
@@ -110,11 +111,9 @@ export function AssistantPanel() {
       >
         <Card className="h-full gap-3 py-4">
           <div className="flex items-center gap-2 px-4">
-            <span className="grid size-8 place-items-center rounded-full bg-accent text-accent-foreground">
-              <Bot className="size-4" aria-hidden />
-            </span>
-            <h2 className="flex-1 font-semibold">Assistant</h2>
-            <Button variant="ghost" size="icon-sm" className="rounded-full xl:hidden" aria-label="Close assistant" onClick={() => setOpen(false)}>
+            <img src={mikayla} alt="" className="size-8 rounded-full object-cover" />
+            <h2 className="flex-1 font-semibold">Mikayla</h2>
+            <Button variant="ghost" size="icon-sm" className="rounded-full xl:hidden" aria-label="Close Mikayla" onClick={() => setOpen(false)}>
               <X />
             </Button>
           </div>
@@ -141,7 +140,7 @@ export function AssistantPanel() {
             <FormError>{error}</FormError>
             <div className="flex items-end gap-2">
               <label htmlFor="assistant-message" className="sr-only">
-                Message the assistant
+                Message Mikayla
               </label>
               <Textarea
                 id="assistant-message"
