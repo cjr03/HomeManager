@@ -317,6 +317,7 @@ def test_shopping_list(auth_client, fake):
     assert r.json() == {
         "needed": {"items": [{"name": "Spaghetti", "quantity": 500.0, "unit": "g"}]},
         "shopping": {"items": [{"name": "Spaghetti", "quantity": 250.0, "unit": "g", "category": "pantry"}]},
+        "done": [],
     }
     needed, have = fake.calls["shopping_list"]
     assert needed.items[0].name == "Spaghetti"
@@ -508,3 +509,23 @@ def test_shopping_list_is_saved_with_its_week(make_user, client_for, db, fake):
     a.post("/api/meals/shopping-list", json={"week_start": SUNDAY})
     assert a.get(url).json() == built  # a failed rebuild keeps the saved list
     assert client_for(make_user()).get(url).json() is None
+
+
+def test_shopping_list_check_offs_are_saved(make_user, client_for, db, fake):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    a, b = client_for(ann), client_for(bob)
+    put_meal(a, SUNDAY, "dinner")
+    url = f"/api/meals/shopping-list?week_start={SUNDAY}"
+    bought = lambda i, on: b.patch("/api/meals/shopping-list", json={"week_start": SUNDAY, "index": i, "bought": on})
+    assert bought(0, True).status_code == 404  # nothing built yet
+    a.post("/api/meals/shopping-list", json={"week_start": SUNDAY})
+    assert bought(0, True).json()["done"] == [0]
+    assert a.get(url).json()["done"] == [0]  # the household shares check-offs
+    assert bought(0, False).status_code == 200
+    assert a.get(url).json()["done"] == []
+    assert bought(1, True).status_code == 404  # the list has one item
+    assert client_for(make_user()).patch("/api/meals/shopping-list", json={"week_start": SUNDAY, "index": 0, "bought": True}).status_code == 404
+    bought(0, True)
+    a.post("/api/meals/shopping-list", json={"week_start": SUNDAY})
+    assert a.get(url).json()["done"] == []  # a rebuild starts unchecked

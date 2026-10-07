@@ -131,6 +131,12 @@ class GenerateIn(WeekIn):
 class ShoppingOut(BaseModel):
     needed: GroceryList
     shopping: ShoppingList
+    done: list[int] = []  # indexes into shopping.items that have been bought
+
+
+class BoughtIn(WeekIn):
+    index: Annotated[int, Field(ge=0)]
+    bought: bool
 
 
 def get_agents():
@@ -281,6 +287,19 @@ def shopping_list(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
     db.add(ShoppingListRow(user_id=user.id, week_start=body.week_start, data=out.model_dump(mode="json")))
     db.commit()
     return out
+
+
+@router.patch("/meals/shopping-list", response_model=ShoppingOut)
+def mark_bought(body: BoughtIn, user: CurrentUser, db: DB):
+    # Locked so two people checking items off at once don't overwrite each other.
+    row = db.scalars(select(ShoppingListRow).where(*_week_list(household(db, user), body.week_start)).with_for_update()).first()
+    if row is None or body.index >= len(row.data["shopping"]["items"]):
+        raise HTTPException(404, "Shopping list item not found")
+    done = set(row.data.get("done", []))
+    (done.add if body.bought else done.discard)(body.index)
+    row.data = {**row.data, "done": sorted(done)}
+    db.commit()
+    return row.data
 
 
 @router.post("/meals/generate", response_model=list[MealOut])

@@ -62,6 +62,18 @@ describe('MealsPage', () => {
     expect(screen.getByRole('button', { name: 'Select week of Oct 18' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('reopens on the week in the URL, so a reload keeps it', async () => {
+    mockApi({
+      'GET /api/me': USER,
+      'GET /api/meals?month=2026-11': [],
+      'GET /api/pantry': PANTRY,
+      'GET /api/meals/shopping-list?week_start=2026-11-08': null,
+    })
+    renderAt('/meals?month=2026-11&week=2026-11-08')
+    expect(await screen.findByRole('heading', { name: 'November 2026' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Nov 8 – 14' })).toBeInTheDocument()
+  })
+
   it('selects the week of a clicked day', async () => {
     setup()
     await openDay('Tuesday, October 20')
@@ -199,8 +211,10 @@ describe('MealsPage', () => {
             { name: 'Garlic', quantity: 1, unit: '', category: 'produce' },
           ],
         },
+        done: [],
       }))
-      setup({ 'POST /api/meals/shopping-list': post })
+      const patch = vi.fn()
+      setup({ 'POST /api/meals/shopping-list': post, 'PATCH /api/meals/shopping-list': patch })
       const writeText = vi.fn()
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
       await userEvent.click(await screen.findByRole('button', { name: 'Build shopping list' }))
@@ -215,6 +229,7 @@ describe('MealsPage', () => {
       const onion = within(card).getByRole('checkbox', { name: '2 Onion' })
       await userEvent.click(onion)
       expect(onion).toBeChecked()
+      expect(patch).toHaveBeenCalledWith({ method: 'PATCH', json: { week_start: '2026-10-04', index: 1, bought: true } })
 
       await userEvent.click(within(card).getByRole('button', { name: 'Copy' }))
       expect(writeText).toHaveBeenCalledWith('Produce\n- 2 Onion\n- 1 Garlic\n\nPantry\n- 500 g Spaghetti')
@@ -226,7 +241,10 @@ describe('MealsPage', () => {
         { name: 'Onion', quantity: 2, unit: '', category: 'produce' },
         { name: 'Garlic', quantity: 1, unit: '', category: 'produce' },
       ]
-      setup({ 'POST /api/meals/shopping-list': () => ({ needed: { items: [] }, shopping: { items } }) })
+      setup({
+        'POST /api/meals/shopping-list': () => ({ needed: { items: [] }, shopping: { items }, done: [] }),
+        'PATCH /api/meals/shopping-list': {},
+      })
       const build = await screen.findByRole('button', { name: 'Build shopping list' })
       await userEvent.click(build)
       await userEvent.click(await screen.findByRole('checkbox', { name: '2 Onion' }))
@@ -241,14 +259,19 @@ describe('MealsPage', () => {
       expect(screen.queryByRole('region', { name: 'Groceries needed' })).not.toBeInTheDocument()
     })
 
-    it("shows each week's saved shopping list", async () => {
-      const list = (name: string) => ({ needed: { items: [] }, shopping: { items: [{ name, quantity: 1, unit: '', category: 'produce' }] } })
+    it("shows each week's saved shopping list with its check-offs", async () => {
+      const list = (name: string, done: number[]) => ({
+        needed: { items: [] },
+        shopping: { items: [{ name, quantity: 1, unit: '', category: 'produce' }] },
+        done,
+      })
       setup({
-        'GET /api/meals/shopping-list?week_start=2026-10-04': list('Onion'),
-        'GET /api/meals/shopping-list?week_start=2026-10-18': list('Leek'),
+        'GET /api/meals/shopping-list?week_start=2026-10-04': list('Onion', [0]),
+        'GET /api/meals/shopping-list?week_start=2026-10-18': list('Leek', []),
       })
       const card = await screen.findByRole('region', { name: 'Shopping list' })
-      expect(within(card).getByRole('checkbox', { name: '1 Onion' })).toBeInTheDocument()
+      expect(within(card).getByRole('checkbox', { name: '1 Onion' })).toBeChecked()
+      expect(card).toHaveTextContent('0 of 1 left to buy')
       await userEvent.click(screen.getByRole('button', { name: 'Select week of Oct 18' }))
       expect(await screen.findByRole('checkbox', { name: '1 Leek' })).toBeInTheDocument()
       expect(screen.queryByRole('checkbox', { name: '1 Onion' })).not.toBeInTheDocument()
@@ -293,15 +316,21 @@ describe('MealsPage', () => {
     const list = (...names: string[]) => ({
       needed: { items: [] },
       shopping: { items: names.map((name) => ({ name, quantity: 1, unit: '', category: 'produce' })) },
+      done: [] as number[],
     })
     const calls = (path: string) => vi.mocked(api).mock.calls.filter(([p, init]) => p === path && !init?.method).length
     const SHOP = '/api/meals/shopping-list?week_start=2026-10-04'
 
     async function setupAssistant(after: { meals?: unknown[]; shopping?: unknown; pantry?: unknown }) {
       let changed = false
+      const saved = list('Onion', 'Garlic')
       setup({
         'GET /api/meals?month=2026-10': () => (changed && after.meals) || [DINNER, BREAKFAST],
-        [`GET ${SHOP}`]: () => (changed && after.shopping) || list('Onion', 'Garlic'),
+        [`GET ${SHOP}`]: () => (changed && after.shopping) || saved,
+        'PATCH /api/meals/shopping-list': (init: { json: { index: number } }) => {
+          saved.done = [init.json.index]
+          return saved
+        },
         'GET /api/pantry': () => (changed && after.pantry) || PANTRY,
         'POST /api/assistant': (init: { json: { context: unknown } }) => {
           changed = true
