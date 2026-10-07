@@ -32,7 +32,7 @@ export const signedMoney = (v: string | number) => signedUsd.format(Number(v))
 export const TONE_LABEL = { good: 'On track or better', bad: 'Needs attention' }
 
 /** A signed difference whose colour, icon and hidden label say whether the change is good for the user. */
-export function Delta({ value, better = 'up', className }: { value: string; better?: 'up' | 'down'; className?: string }) {
+export function Delta({ value, better = 'up' }: { value: string; better?: 'up' | 'down' }) {
   const n = Number(value)
   const tone = n === 0 ? 'neutral' : n > 0 === (better === 'up') ? 'good' : 'bad'
   const Icon = tone === 'bad' ? CircleAlert : CircleCheck
@@ -42,7 +42,6 @@ export function Delta({ value, better = 'up', className }: { value: string; bett
       className={cn(
         'inline-flex items-center gap-1 font-semibold tabular-nums',
         { good: 'text-primary', bad: 'text-destructive', neutral: 'text-muted-foreground' }[tone],
-        className,
       )}
     >
       {tone !== 'neutral' && <Icon className="size-[1em] shrink-0" aria-hidden />}
@@ -106,17 +105,18 @@ const KINDS: Record<Kind, Config> = {
 }
 
 // Rows stack name over amounts in narrow cards and become one aligned row from 28rem of card width.
+// The last column holds the edit/delete buttons, so read-only cards leave it out.
 const ROW = {
-  1: '@md:grid-cols-[minmax(0,1fr)_7rem_4.25rem]',
-  2: '@md:grid-cols-[minmax(0,1fr)_repeat(2,7rem)_4.25rem]',
+  editable: { 1: '@md:grid-cols-[minmax(0,1fr)_7rem_4.25rem]', 2: '@md:grid-cols-[minmax(0,1fr)_repeat(2,7rem)_4.25rem]' },
+  readOnly: { 1: '@md:grid-cols-[minmax(0,1fr)_7rem]', 2: '@md:grid-cols-[minmax(0,1fr)_repeat(2,7rem)]' },
 }
 
 function Amounts({ values, labels }: { values: (string | null)[]; labels: string[] }) {
   return (
-    <div className={cn('col-span-2 grid gap-x-3 @md:contents', values.length === 2 ? 'grid-cols-2' : 'grid-cols-1')}>
+    <div className={cn('col-span-full row-start-2 grid gap-x-3 @md:contents', values.length === 2 ? 'grid-cols-2' : 'grid-cols-1')}>
       {values.map((v, i) => (
-        <span key={labels[i]} className="flex justify-between gap-2 tabular-nums @md:justify-end">
-          <span className="text-xs text-muted-foreground @md:sr-only">{labels[i]}</span>
+        <span key={labels[i]} className="flex items-baseline justify-between gap-2 tabular-nums @md:justify-end">
+          <span className="text-xs font-normal text-muted-foreground @md:sr-only">{labels[i]}</span>
           {v === null ? <span className="text-muted-foreground">–</span> : money(v)}
         </span>
       ))}
@@ -203,7 +203,7 @@ export function BudgetCard({ kind, lines, summary, owners, onAdd, onUpdate, onDe
   const config = KINDS[kind]
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const editable = !!onAdd
-  const row = cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5', ROW[config.cols.length as 1 | 2])
+  const row = cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5', ROW[editable ? 'editable' : 'readOnly'][config.cols.length as 1 | 2])
   const change = config.change?.(summary)
 
   return (
@@ -252,21 +252,17 @@ export function BudgetCard({ kind, lines, summary, owners, onAdd, onUpdate, onDe
                   )}
                   <span className="truncate">{line.name}</span>
                 </span>
-                <div className="col-span-full row-start-2 @md:contents">
-                  <Amounts values={config.cols.length === 2 ? [line.a, line.b] : [line.a]} labels={config.cols} />
-                </div>
-                <span className="col-start-2 row-start-1 flex justify-end gap-0.5 @md:col-start-auto @md:row-start-auto">
-                  {editable && (
-                    <>
-                      <Button size="icon-sm" variant="ghost" className="rounded-full text-muted-foreground" aria-label={`Edit ${line.name}`} onClick={() => setEditing(line.id)}>
-                        <Pencil />
-                      </Button>
-                      <Button size="icon-sm" variant="ghost" className="rounded-full text-muted-foreground hover:text-destructive" aria-label={`Delete ${line.name}`} onClick={() => onDelete?.(line.id)}>
-                        <Trash2 />
-                      </Button>
-                    </>
-                  )}
-                </span>
+                <Amounts values={config.cols.length === 2 ? [line.a, line.b] : [line.a]} labels={config.cols} />
+                {editable && (
+                  <span className="col-start-2 row-start-1 flex justify-end gap-0.5 @md:col-start-auto @md:row-start-auto">
+                    <Button size="icon-sm" variant="ghost" className="rounded-full text-muted-foreground" aria-label={`Edit ${line.name}`} onClick={() => setEditing(line.id)}>
+                      <Pencil />
+                    </Button>
+                    <Button size="icon-sm" variant="ghost" className="rounded-full text-muted-foreground hover:text-destructive" aria-label={`Delete ${line.name}`} onClick={() => onDelete?.(line.id)}>
+                      <Trash2 />
+                    </Button>
+                  </span>
+                )}
                 {config.meter && (
                   <Meter
                     name={line.name}
@@ -294,11 +290,9 @@ export function BudgetCard({ kind, lines, summary, owners, onAdd, onUpdate, onDe
           />
         )}
         <div className="space-y-1.5 border-t pt-3 text-sm">
-          <div className={row}>
-            <span className="font-semibold">Total</span>
-            <div className="col-span-full row-start-2 font-semibold @md:contents">
-              <Amounts values={config.totals(summary)} labels={config.cols} />
-            </div>
+          <div className={cn(row, 'font-semibold')}>
+            <span>Total</span>
+            <Amounts values={config.totals(summary)} labels={config.cols} />
           </div>
           {change && (
             <div className="flex items-center justify-between gap-3">

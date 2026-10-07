@@ -56,11 +56,11 @@ function Overview({ summary: s }: { summary: Summary }) {
           <p className="text-5xl font-bold tracking-tight break-all sm:text-6xl">{money(s.net_worth)}</p>
           <dl className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <dt className="text-muted-foreground">You own</dt>
+              <dt className="text-muted-foreground">Owned</dt>
               <dd className="font-semibold tabular-nums">{money(owned)}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">You owe</dt>
+              <dt className="text-muted-foreground">Owed</dt>
               <dd className="font-semibold tabular-nums">{money(owed)}</dd>
             </div>
           </dl>
@@ -115,7 +115,7 @@ function Contributions({ data }: { data: SharedData }) {
                     <UserAvatar {...m} className="size-7 text-sm" />
                     {m.username}
                   </div>
-                  <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+                  <dl className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
                     <Figure label="Income">{money(s.income.post_tax)}</Figure>
                     <Figure label="Spent">{money(s.expenses.actual)}</Figure>
                     <Figure label="Saved">{money(s.savings.actual)}</Figure>
