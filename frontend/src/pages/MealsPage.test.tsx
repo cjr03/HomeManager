@@ -27,6 +27,8 @@ function setup(extra: Record<string, unknown> = {}) {
     'GET /api/me': { ...USER, preferences: { ...USER.preferences, diet: 'vegetarian', favorite_cuisines: ['Thai'] } },
     'GET /api/meals?month=2026-10': [DINNER, BREAKFAST],
     'GET /api/pantry': PANTRY,
+    'GET /api/meals/shopping-list?week_start=2026-10-04': null,
+    'GET /api/meals/shopping-list?week_start=2026-10-18': null,
     ...extra,
   })
   renderAt('/meals')
@@ -237,6 +239,19 @@ describe('MealsPage', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Select week of Oct 18' }))
       expect(screen.queryByRole('region', { name: 'Shopping list' })).not.toBeInTheDocument()
       expect(screen.queryByRole('region', { name: 'Groceries needed' })).not.toBeInTheDocument()
+    })
+
+    it("shows each week's saved shopping list", async () => {
+      const list = (name: string) => ({ needed: { items: [] }, shopping: { items: [{ name, quantity: 1, unit: '', category: 'produce' }] } })
+      setup({
+        'GET /api/meals/shopping-list?week_start=2026-10-04': list('Onion'),
+        'GET /api/meals/shopping-list?week_start=2026-10-18': list('Leek'),
+      })
+      const card = await screen.findByRole('region', { name: 'Shopping list' })
+      expect(within(card).getByRole('checkbox', { name: '1 Onion' })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Select week of Oct 18' }))
+      expect(await screen.findByRole('checkbox', { name: '1 Leek' })).toBeInTheDocument()
+      expect(screen.queryByRole('checkbox', { name: '1 Onion' })).not.toBeInTheDocument()
     })
 
     it('offers only the shopping list, not a separate groceries-needed button', async () => {

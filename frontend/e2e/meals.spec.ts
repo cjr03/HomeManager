@@ -63,4 +63,9 @@ test('plan a week: pantry, generate, edit a meal, build the shopping list, gener
   await expect(page.getByText('Pantry generated from last week')).toBeVisible()
   await expect(pantry.getByLabel('Quantity of Milk')).toHaveValue('1')
   await expect(pantry.getByLabel('Item 2 name')).toHaveCount(0)
+  await expect(list).toBeHidden()
+
+  // The built list stays with its week.
+  await weeks.nth(1).click()
+  await expect(list.getByRole('group', { name: 'Meat' })).toContainText('Ground beef')
 })
