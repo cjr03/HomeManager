@@ -16,7 +16,7 @@ let queue: Promise<unknown> = warm
 onmessage = ({ data: text }: MessageEvent<string>) => {
   queue = queue
     .then(async () => {
-      const { audio, sampling_rate } = await (await tts).generate(text, { voice: 'af_heart', speed: 1.1 })
+      const { audio, sampling_rate } = await (await tts).generate(text, { voice: 'af_heart', speed: 1 })
       postMessage({ audio, sampling_rate }, { transfer: [audio.buffer] })
     })
     .catch(() => postMessage({})) // no audio: she says this one in the browser's voice

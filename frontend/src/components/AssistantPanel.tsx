@@ -98,6 +98,7 @@ export function AssistantPanel() {
           page,
           today: today(),
           context,
+          spoken,
           messages: sent.slice(-39).map((m) => ({ ...m, content: m.content.slice(0, MAX_LENGTH) })),
         },
       })
