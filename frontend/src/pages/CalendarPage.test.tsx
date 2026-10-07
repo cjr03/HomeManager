@@ -30,7 +30,7 @@ const MONTH = {
   people: [{ ...EVE, avatar: 'data:image/png;base64,eve' }, ME],
 }
 const CHORES = [
-  { id: 3, owner_id: USER.id, title: 'Bins', notes: '', start_date: '2026-03-03', recurrence: 'weekly', end_date: null, assignee: EVE },
+  { id: 3, owner_id: USER.id, title: 'Bins', notes: '', start_date: '2026-03-03', recurrence: 'weekly', end_date: null, shared: false, assignee: EVE },
 ]
 const LINKS = { incoming: [], outgoing: [], linked: [{ id: 9, user_id: 5, username: 'eve', avatar: null }] }
 
@@ -141,10 +141,11 @@ describe('CalendarPage', () => {
     await userEvent.selectOptions(card.getByLabelText('Assignee'), 'eve')
     await userEvent.selectOptions(card.getByLabelText('Repeats'), 'Every week')
     await userEvent.type(card.getByLabelText('Ends (optional)'), '2026-06-30')
+    await userEvent.click(card.getByLabelText('Share with linked accounts'))
     await userEvent.click(card.getByRole('button', { name: 'Save chore' }))
     expect(api).toHaveBeenCalledWith('/api/chores', {
       method: 'POST',
-      json: { title: 'Mop', assignee_id: 5, start_date: '2026-03-10', recurrence: 'weekly', end_date: '2026-06-30', notes: '' },
+      json: { title: 'Mop', assignee_id: 5, start_date: '2026-03-10', recurrence: 'weekly', end_date: '2026-06-30', notes: '', shared: true },
     })
   })
 
@@ -171,7 +172,7 @@ describe('CalendarPage', () => {
     await userEvent.click(card.getByRole('button', { name: 'Save chore' }))
     expect(api).toHaveBeenCalledWith('/api/chores/3', {
       method: 'PUT',
-      json: { title: 'Bins', assignee_id: 5, start_date: '2026-03-03', recurrence: 'monthly', end_date: null, notes: '' },
+      json: { title: 'Bins', assignee_id: 5, start_date: '2026-03-03', recurrence: 'monthly', end_date: null, notes: '', shared: false },
     })
     await userEvent.click(card.getByRole('button', { name: 'Delete Bins' }))
     expect(api).toHaveBeenCalledWith('/api/chores/3', { method: 'DELETE' })
@@ -187,7 +188,21 @@ describe('CalendarPage', () => {
     await userEvent.click(card.getByRole('button', { name: 'Save chore' }))
     expect(api).toHaveBeenCalledWith('/api/chores/3', {
       method: 'PUT',
-      json: { title: 'Bins', assignee_id: 8, start_date: '2026-03-03', recurrence: 'weekly', end_date: null, notes: '' },
+      json: { title: 'Bins', assignee_id: 8, start_date: '2026-03-03', recurrence: 'weekly', end_date: null, notes: '', shared: false },
     })
+  })
+
+  it('marks shared chores: mine as Shared, a linked account\'s by its owner', async () => {
+    setup({
+      'GET /api/chores': [
+        { ...CHORES[0], shared: true },
+        { ...CHORES[0], id: 10, owner_id: 5, title: 'Hoover', assignee: EVE, shared: true },
+      ],
+    })
+    const card = within((await screen.findByRole('heading', { name: 'Chores' })).closest('[data-slot="card"]') as HTMLElement)
+    const bins = (await card.findByText('Bins')).closest('li') as HTMLElement
+    expect(within(bins).getByText('Shared')).toBeInTheDocument()
+    expect(await card.findByText('From eve')).toBeInTheDocument()
+    expect(card.queryByRole('button', { name: 'Edit Hoover' })).not.toBeInTheDocument()
   })
 })
