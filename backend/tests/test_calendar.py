@@ -145,6 +145,8 @@ def pair(make_user, client_for, db):
         ("post", "/api/events"),
         ("put", "/api/events/1"),
         ("delete", "/api/events/1"),
+        ("post", "/api/events/1/done"),
+        ("delete", "/api/events/1/done"),
         ("get", "/api/chores"),
         ("post", "/api/chores"),
         ("put", "/api/chores/1"),
@@ -171,7 +173,7 @@ def test_event_crud(auth_client):
     ev = r.json()
     assert ev | {"id": 0} == {
         "id": 0, "owner_id": auth_client.user.id, "title": "Dentist", "date": "2026-03-10",
-        "start_time": "09:30:00", "notes": "", "shared": False,
+        "start_time": "09:30:00", "notes": "", "shared": False, "done": False,
     }
     r = auth_client.put(f"/api/events/{ev['id']}", json={"title": "Doctor", "date": "2026-03-11", "start_time": None})
     assert r.status_code == 200
@@ -192,6 +194,35 @@ def test_event_cross_user_404(pair):
     assert cb.put(f"/api/events/{ev['id']}", json={"title": "x", "date": "2026-03-10"}).status_code == 404
     assert cb.delete(f"/api/events/{ev['id']}").status_code == 404
     assert cb.delete("/api/events/999999").status_code == 404
+
+
+def done_flags(c):
+    return {e["title"]: e["done"] for e in c.get("/api/calendar/2026-03").json()["events"]}
+
+
+def test_event_done_toggle_survives_edits(auth_client):
+    eid = event(auth_client).json()["id"]
+    assert auth_client.post(f"/api/events/{eid}/done").status_code == 204
+    assert auth_client.post(f"/api/events/{eid}/done").status_code == 204  # idempotent
+    assert done_flags(auth_client) == {"Dentist": True}
+    r = auth_client.put(f"/api/events/{eid}", json={"title": "Dentist", "date": "2026-03-10", "done": False})
+    assert r.json()["done"] is True  # PUT never touches done
+    assert auth_client.delete(f"/api/events/{eid}/done").status_code == 204
+    assert auth_client.delete(f"/api/events/{eid}/done").status_code == 204
+    assert done_flags(auth_client) == {"Dentist": False}
+
+
+def test_event_done_by_linked_user_only_when_shared(pair, make_user, client_for):
+    ann, bob, ca, cb = pair
+    shared, private = event(ca, title="Party", shared=True).json()["id"], event(ca, title="Mine").json()["id"]
+    assert cb.post(f"/api/events/{shared}/done").status_code == 204
+    assert done_flags(ca) == {"Party": True, "Mine": False}
+    assert cb.delete(f"/api/events/{shared}/done").status_code == 204
+    assert cb.post(f"/api/events/{private}/done").status_code == 404
+    eve = client_for(make_user("eve"))
+    assert eve.post(f"/api/events/{shared}/done").status_code == 404
+    assert eve.delete(f"/api/events/{shared}/done").status_code == 404
+    assert cb.post("/api/events/999999/done").status_code == 404
 
 
 def test_shared_events_visible_only_through_accepted_link(make_user, client_for, db):

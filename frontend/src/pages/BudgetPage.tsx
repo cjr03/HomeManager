@@ -1,5 +1,5 @@
 import { CircleAlert, CircleCheck, Copy } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { BudgetCard, Delta, money, TONE_LABEL, type Kind, type Line, type LineInput, type Member, type Summary } from '@/components/BudgetCard'
 import { errorText, FormError } from '@/components/Field'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
+import { useAssistant } from '@/lib/assistant'
 import { currentMonth, monthLabel } from '@/lib/month'
 
 type MonthData = { lines: Line[]; summary: Summary }
@@ -145,6 +146,8 @@ export function BudgetPage() {
   // The path on screen. Responses that land after the user moved to another month or view are dropped.
   const shown = useRef(path)
   const show = (from: string, d: MonthData | SharedData) => shown.current === from && setData(d)
+  const [version, reload] = useReducer((n: number) => n + 1, 0) // bumped when the assistant changes data
+  useAssistant({ month, partner_id: view === 'mine' ? null : Number(view) }, reload)
 
   useEffect(() => void api<{ linked: LinkEntry[] }>('/api/links').then((l) => setLinked(l.linked), () => {}), [])
   useEffect(() => {
@@ -154,7 +157,7 @@ export function BudgetPage() {
       (d) => show(path, d),
       (err) => toast.error(errorText(err)),
     )
-  }, [path])
+  }, [path, version])
 
   async function run(action: () => Promise<unknown>) {
     try {
