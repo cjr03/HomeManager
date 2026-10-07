@@ -179,6 +179,13 @@ describe('AssistantPanel', () => {
       expect(await box()).toHaveValue('')
     })
 
+    it('spells her name Mikayla in the box, never Michaela', async () => {
+      setup(() => new Promise(() => {}))
+      await talk()
+      act(() => FakeRecognition.last.onresult?.({ results: [Object.assign([{ transcript: 'Thanks Michaela' }], { isFinal: false })] }))
+      expect(await box()).toHaveValue('Thanks Mikayla')
+    })
+
     it('adds what you say to what you typed, and holds typed sends while listening', async () => {
       const sent: unknown[] = []
       setup(({ json }) => {

@@ -11,7 +11,7 @@ import { assistantTarget } from '@/lib/assistant'
 import { useAuth } from '@/lib/auth'
 import { today } from '@/lib/month'
 import { cn } from '@/lib/utils'
-import { prime, recognizer, speak, type Recognition } from '@/lib/voice'
+import { prime, recognizer, speak, spellMikayla, type Recognition } from '@/lib/voice'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
@@ -134,7 +134,7 @@ export function AssistantPanel() {
     r.lang = 'en-US'
     r.interimResults = true
     r.onresult = (e) => {
-      heard = `${typed} ${Array.from(e.results, (result) => result[0].transcript).join('')}`.trim()
+      heard = spellMikayla(`${typed} ${Array.from(e.results, (result) => result[0].transcript).join('')}`.trim())
       setDraft(heard)
     }
     r.onerror = (e) => {
