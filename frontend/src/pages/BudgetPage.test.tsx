@@ -19,7 +19,8 @@ const SUMMARY = {
   assets: '15000.00',
   income: { pre_tax: '5000.00', post_tax: '3800.00' },
   expenses: { budgeted: '1500.00', actual: '1400.00', difference: '100.00' },
-  remainder: { budgeted: '2300.00', actual: '2400.00', difference: '100.00' },
+  savings: { budgeted: '300.00', actual: '200.00', difference: '-100.00' },
+  remainder: { budgeted: '2000.00', actual: '2200.00', difference: '200.00' },
   net_worth: '12345.67',
 }
 const line = (id: number, kind: string, name: string, a: string, b: string | null, owner_id = 1) => ({
@@ -48,16 +49,23 @@ describe('BudgetPage', () => {
     setup({ [`GET /api/budget/${M}`]: MINE })
     const o = await overview()
     expect(o.getByText('$12,345.67')).toBeInTheDocument()
-    expect(o.getByText('$2,300.00')).toBeInTheDocument()
-    expect(o.getByText('$2,400.00')).toBeInTheDocument()
-    expect(o.getByText('+$100.00').closest('[data-tone]')).toHaveAttribute('data-tone', 'good')
     expect(o.getByText('$5,000.00')).toBeInTheDocument()
-    expect(o.getByText('$3,800.00')).toBeInTheDocument()
     expect(within(screen.getByRole('list', { name: 'Legend' })).getByText('Needs attention')).toBeInTheDocument()
     for (const name of ['What you own', 'What you owe', "This month's plan"])
       expect(screen.getByRole('heading', { name })).toBeInTheDocument()
     expect(screen.getByRole('listitem', { name: 'Rent' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Copy last month' })).not.toBeInTheDocument()
+  })
+
+  it('breaks the monthly remainder down into income minus expenses and savings', async () => {
+    setup({ [`GET /api/budget/${M}`]: MINE })
+    const t = within((await overview()).getByRole('table', { name: 'Monthly remainder' }))
+    const cells = (name: RegExp) => within(t.getByRole('row', { name })).getAllByRole('cell').map((c) => c.textContent)
+    expect(cells(/Post-tax income/)).toEqual(['$3,800.00', '$3,800.00'])
+    expect(cells(/Expenses/)).toEqual(['$1,500.00', '$1,400.00'])
+    expect(cells(/Savings/)).toEqual(['$300.00', '$200.00'])
+    expect(cells(/Left over/)).toEqual(['$2,000.00', '$2,200.00'])
+    expect(t.getByText('+$200.00').closest('[data-tone]')).toHaveAttribute('data-tone', 'good')
   })
 
   it('adds, edits and deletes lines and reloads', async () => {

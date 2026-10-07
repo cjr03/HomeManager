@@ -37,7 +37,7 @@ function Tile({ title, hint, children }: { title: string; hint: string; children
         <h2 className="font-semibold">{title}</h2>
         <p className="text-sm text-muted-foreground">{hint}</p>
       </div>
-      <dl className="space-y-2 text-sm">{children}</dl>
+      {children}
     </div>
   )
 }
@@ -65,23 +65,62 @@ function Overview({ summary: s }: { summary: Summary }) {
             </div>
           </dl>
         </div>
-        <Tile title="Monthly remainder" hint="Post-tax income after expenses and savings">
-          <Figure label="Budgeted">{money(s.remainder.budgeted)}</Figure>
-          <Figure label="Actual">{money(s.remainder.actual)}</Figure>
-          <div className="flex items-baseline justify-between gap-4 border-t pt-2">
-            <dt className="text-muted-foreground">Versus plan</dt>
-            <dd>
-              <Delta value={s.remainder.difference} />
-            </dd>
-          </div>
+        <Tile title="Monthly remainder" hint="Post-tax income minus expenses and savings">
+          <table aria-label="Monthly remainder" className="w-full text-sm tabular-nums">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="text-left font-normal">
+                  <span className="sr-only">Line</span>
+                </th>
+                <th className="pb-1 pl-4 text-right font-normal">Budgeted</th>
+                <th className="pb-1 pl-4 text-right font-normal">Actual</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(
+                [
+                  ['', 'Post-tax income', s.income.post_tax, s.income.post_tax],
+                  ['−', 'Expenses', s.expenses.budgeted, s.expenses.actual],
+                  ['−', 'Savings', s.savings.budgeted, s.savings.actual],
+                ] as const
+              ).map(([op, label, budgeted, actual]) => (
+                <tr key={label}>
+                  <th scope="row" className="py-0.5 text-left font-normal text-muted-foreground">
+                    <span className="inline-block w-3" aria-hidden>{op}</span>
+                    {label}
+                  </th>
+                  <td className="pl-4 text-right">{money(budgeted)}</td>
+                  <td className="pl-4 text-right">{money(actual)}</td>
+                </tr>
+              ))}
+              <tr className="border-t font-semibold">
+                <th scope="row" className="pt-2 text-left">
+                  <span className="inline-block w-3" aria-hidden>=</span>
+                  Left over
+                </th>
+                <td className="pt-2 pl-4 text-right">{money(s.remainder.budgeted)}</td>
+                <td className="pt-2 pl-4 text-right">{money(s.remainder.actual)}</td>
+              </tr>
+              <tr>
+                <th scope="row" className="pt-2 text-left font-normal text-muted-foreground">
+                  Versus plan
+                </th>
+                <td colSpan={2} className="pt-2 text-right">
+                  <Delta value={s.remainder.difference} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </Tile>
         <Tile title="Monthly income" hint="Everything coming in this month">
-          <Figure label="Pre-tax">{money(s.income.pre_tax)}</Figure>
-          <Figure label="Post-tax">{money(s.income.post_tax)}</Figure>
-          <div className="flex items-baseline justify-between gap-4 border-t pt-2 text-muted-foreground">
-            <dt>Taxes and deductions</dt>
-            <dd className="tabular-nums">{money(Number(s.income.pre_tax) - Number(s.income.post_tax))}</dd>
-          </div>
+          <dl className="space-y-2 text-sm">
+            <Figure label="Pre-tax">{money(s.income.pre_tax)}</Figure>
+            <Figure label="Post-tax">{money(s.income.post_tax)}</Figure>
+            <div className="flex items-baseline justify-between gap-4 border-t pt-2 text-muted-foreground">
+              <dt>Taxes and deductions</dt>
+              <dd className="tabular-nums">{money(Number(s.income.pre_tax) - Number(s.income.post_tax))}</dd>
+            </div>
+          </dl>
         </Tile>
       </Card>
       <ul aria-label="Legend" className="flex flex-wrap gap-x-5 gap-y-1 px-1 text-sm text-muted-foreground">
