@@ -152,6 +152,38 @@ describe('MealsPage', () => {
       })
       expect(toast.success).toHaveBeenCalledWith('Pantry saved')
     })
+
+    it('saves unsaved edits, then generates the pantry from the week before the selected one', async () => {
+      const put = vi.fn((init: { json: unknown }) => init.json)
+      const post = vi.fn(() => ({ items: [{ name: 'Rice', quantity: 0.5, unit: 'kg' }] }))
+      setup({ 'PUT /api/pantry': put, 'POST /api/pantry/generate': post })
+      const qty = await screen.findByLabelText('Quantity of Milk')
+      await userEvent.clear(qty)
+      await userEvent.type(qty, '2')
+      await userEvent.click(screen.getByRole('button', { name: 'Select week of Oct 18' }))
+      const generate = screen.getByRole('button', { name: 'Generate pantry' })
+      await userEvent.click(generate)
+      expect(put).toHaveBeenCalledWith({ method: 'PUT', json: { items: [{ name: 'Milk', quantity: 2, unit: 'l' }] } })
+      expect(post).toHaveBeenCalledWith({ method: 'POST', json: { week_start: '2026-10-11' } })
+      expect(await screen.findByLabelText('Quantity of Rice')).toHaveValue(0.5)
+      expect(screen.queryByLabelText('Quantity of Milk')).not.toBeInTheDocument()
+      expect(toast.success).toHaveBeenCalledWith('Pantry generated from last week')
+      expect(generate).toBeDisabled() // once per week, so last week's groceries can't come off twice
+    })
+
+    it('keeps the pantry and re-enables Generate when it fails', async () => {
+      setup({
+        'PUT /api/pantry': (init: { json: unknown }) => init.json,
+        'POST /api/pantry/generate': () => {
+          throw new ApiError(502, 'The meal assistant is unavailable right now. Please try again.')
+        },
+      })
+      await screen.findByLabelText('Quantity of Milk')
+      await userEvent.click(screen.getByRole('button', { name: 'Generate pantry' }))
+      await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('The meal assistant is unavailable right now. Please try again.'))
+      expect(screen.getByRole('button', { name: 'Generate pantry' })).toBeEnabled()
+      expect(screen.getByLabelText('Quantity of Milk')).toHaveValue(1)
+    })
   })
 
   describe('agents', () => {

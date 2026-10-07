@@ -441,7 +441,7 @@ export function MealsPage() {
         </SectionCard>
         <div className="order-4 space-y-6">
           <HouseholdCard />
-          <PantryCard />
+          <PantryCard lastWeek={addDays(week, -7)} />
         </div>
       </div>
 

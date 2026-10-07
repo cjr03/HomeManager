@@ -15,7 +15,7 @@ from app.agents import (
     WeekMeals,
 )
 from app.main import app
-from app.meals import MealEntry, day_plans, get_agents, week_dates
+from app.meals import MealEntry, day_plans, get_agents, pantry_remainder, week_dates
 
 SUNDAY = "2026-10-04"
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -107,6 +107,7 @@ def test_day_plans_empty():
         ("delete", f"/api/meals/{SUNDAY}/dinner"),
         ("get", "/api/pantry"),
         ("put", "/api/pantry"),
+        ("post", "/api/pantry/generate"),
         ("post", "/api/meals/groceries-needed"),
         ("post", "/api/meals/shopping-list"),
         ("post", "/api/meals/generate"),
@@ -205,6 +206,66 @@ def test_pantry_replace(auth_client, make_user, client_for):
 )
 def test_pantry_validates(auth_client, item):
     assert auth_client.put("/api/pantry", json={"items": [item]}).status_code == 422
+
+
+def g(name, quantity, unit=""):
+    return GroceryItem(name=name, quantity=quantity, unit=unit)
+
+
+def test_pantry_remainder():
+    have = [g("Spaghetti", 300, "g"), g("Rice", 1, "kg"), g("Milk", 1, "l")]
+    bought = [g("spaghetti", 250, "G"), g("Milk", 1.1, "l"), g("Onion", 3)]
+    used = [g("SPAGHETTI ", 500, "g"), g("Milk", 2.1, "l"), g("Onion", 2), g("Garlic", 1)]
+    # Matched by name and unit ignoring case/space; first spelling kept; used up or never had -> dropped.
+    assert pantry_remainder(have, bought, used) == [g("Spaghetti", 50, "g"), g("Rice", 1, "kg"), g("Onion", 1)]
+    assert pantry_remainder([g("Rice", 1, "kg")], [], [g("Rice", 500, "g")]) == [g("Rice", 1, "kg")]  # no unit conversion
+
+
+def test_generate_pantry(auth_client, fake, make_user, client_for):
+    other = client_for(make_user())
+    other.put("/api/pantry", json={"items": [{"name": "Eggs", "quantity": 6, "unit": ""}]})
+    put_meal(auth_client, SUNDAY, "dinner")
+    auth_client.put(
+        "/api/pantry",
+        json={"items": [{"name": "spaghetti", "quantity": 300, "unit": "g"}, {"name": "Rice", "quantity": 1, "unit": "kg"}]},
+    )
+    # have 300 g + bought 250 g - needed 500 g = 50 g spaghetti; rice untouched.
+    expected = {"items": [{"name": "spaghetti", "quantity": 50.0, "unit": "g"}, {"name": "Rice", "quantity": 1.0, "unit": "kg"}]}
+    r = auth_client.post("/api/pantry/generate", json={"week_start": SUNDAY})
+    assert r.status_code == 200 and r.json() == expected
+    assert auth_client.get("/api/pantry").json() == expected
+    assert fake.calls["shopping_list"][1] == [g("spaghetti", 300, "g"), g("Rice", 1, "kg")]
+    assert other.get("/api/pantry").json() == {"items": [{"name": "Eggs", "quantity": 6.0, "unit": ""}]}
+
+
+def long_unit_shopping(needed, have):
+    return ShoppingList(items=[ShoppingItem(name="Celery", quantity=1, unit="bunch (about 6 stalks)", category="produce")])
+
+
+@pytest.mark.parametrize(
+    "meals,error,shopping,status,detail",
+    [
+        (False, None, None, 400, "No meals were planned last week"),
+        (True, AgentError("Try again."), None, 502, "Try again."),
+        (True, None, long_unit_shopping, 502, "The meal assistant returned an item the pantry can't hold. Please try again."),
+    ],
+)
+def test_generate_pantry_failure_keeps_pantry(auth_client, fake, meals, error, shopping, status, detail):
+    items = [{"name": "Rice", "quantity": 1.0, "unit": "kg"}]
+    auth_client.put("/api/pantry", json={"items": items})
+    if meals:
+        put_meal(auth_client, SUNDAY, "dinner")
+    fake.error = error
+    if shopping:
+        fake.shopping_list = shopping
+    r = auth_client.post("/api/pantry/generate", json={"week_start": SUNDAY})
+    assert r.status_code == status and r.json() == {"detail": detail}
+    assert auth_client.get("/api/pantry").json() == {"items": items}
+
+
+@pytest.mark.parametrize("week_start", ["2026-10-05", "nope"])
+def test_generate_pantry_week_must_be_a_sunday(auth_client, fake, week_start):
+    assert auth_client.post("/api/pantry/generate", json={"week_start": week_start}).status_code == 422
 
 
 # ---- agents ----
