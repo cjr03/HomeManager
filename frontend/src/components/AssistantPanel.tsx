@@ -213,6 +213,20 @@ export function AssistantPanel() {
           >
             <FormError>{error}</FormError>
             <div className="flex items-end gap-2">
+              {recognizer() && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={listening ? 'default' : 'outline'}
+                  className={cn('shrink-0 rounded-full', listening && 'animate-pulse')}
+                  aria-label="Talk to Mikayla"
+                  aria-pressed={listening}
+                  disabled={busy}
+                  onClick={listen}
+                >
+                  <Mic />
+                </Button>
+              )}
               <label htmlFor="assistant-message" className="sr-only">
                 Message Mikayla
               </label>
@@ -234,20 +248,6 @@ export function AssistantPanel() {
               <Button type="submit" size="icon" className="shrink-0 rounded-full" aria-label="Send" disabled={busy || listening || !draft.trim()}>
                 <Send />
               </Button>
-              {recognizer() && (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant={listening ? 'default' : 'outline'}
-                  className={cn('shrink-0 rounded-full', listening && 'animate-pulse')}
-                  aria-label="Talk to Mikayla"
-                  aria-pressed={listening}
-                  disabled={busy}
-                  onClick={listen}
-                >
-                  <Mic />
-                </Button>
-              )}
             </div>
           </form>
         </Card>
