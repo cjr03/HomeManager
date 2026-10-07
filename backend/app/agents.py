@@ -144,6 +144,9 @@ You are MealGeneratorAgent, the chef of a household meal planner.
 Task: create a full week of meals for the household, Monday through Sunday, using the \
 groceries on hand, the household's preferences and the requested meal slots.
 
+"preferences" is a list with one entry per household member, and every meal is shared by \
+all of them: each member's allergies and diet apply to every meal.
+
 Rules:
 - Return exactly 7 days in order Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, \
 Sunday. Each day contains exactly one meal for each requested slot, in the order the slots \
@@ -155,8 +158,9 @@ peanut oil; gluten allergy excludes wheat pasta, bread, soy sauce unless gluten-
 including dairy, eggs and honey), "pescatarian" (fish but no other meat), "keto" (very low \
 carb), "paleo" (no grains, legumes, dairy or refined sugar), "gluten_free" (no gluten); \
 "none" means no restriction.
-- Avoid everything listed in dislikes. Favour the favourite cuisines, while keeping the week \
-varied (no dish repeated within the week).
+- Avoid everything listed in any member's dislikes. Favour a mix of the members' favourite \
+cuisines, while keeping the week varied (no dish repeated within the week).
+- When members differ on cooking_time or budget_level, follow the quickest and thriftiest.
 - cooking_time: "quick" means at most about 20 minutes of active work, "moderate" up to about \
 45 minutes, "elaborate" may take longer. budget_level "thrifty" favours cheap staples and \
 leftovers, "moderate" is everyday cooking, "generous" allows premium ingredients.
@@ -208,7 +212,7 @@ def shopping_list(needed: GroceryList, have: list[GroceryItem], client=None) -> 
 
 def generate_meals(
     have: list[GroceryItem],
-    preferences: Preferences,
+    preferences: list[Preferences],
     household_size: int,
     slots: list[Slot],
     client=None,
@@ -216,7 +220,7 @@ def generate_meals(
     data = {
         "household_size": household_size,
         "slots": list(slots),
-        "preferences": preferences.model_dump(mode="json"),
+        "preferences": _dump(preferences),
         "have": _dump(have),
     }
     return _call(client, MEAL_GENERATOR_PROMPT, data, WeekMeals)

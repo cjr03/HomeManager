@@ -1,4 +1,7 @@
-"""Meal plan entries, the pantry, and the three meal agents behind HTTP."""
+"""Meal plan entries, the pantry, and the three meal agents behind HTTP.
+
+A user and their accepted links share one plan and pantry: reads cover everyone's rows, and
+rows stay owned by whoever wrote them, so unlinking leaves each user with their own."""
 
 from datetime import date, timedelta
 from decimal import Decimal
@@ -12,6 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app import agents
+from app.accounts import linked_user_ids
 from app.agents import WEEKDAYS, AgentError, DayPlan, GroceryItem, GroceryList, PlannedMeal, ShoppingList, Slot
 from app.auth import DB, CurrentUser, Preferences, User
 from app.db import Base
@@ -128,17 +132,31 @@ Agents = Annotated[object, Depends(get_agents)]
 router = APIRouter(prefix="/api", tags=["meals"])
 
 
-def _entries(db: Session, user: User, start: date, end: date) -> list[MealEntry]:
-    return list(
-        db.scalars(
-            select(MealEntry)
-            .where(MealEntry.user_id == user.id, MealEntry.date >= start, MealEntry.date < end)
-            .order_by(MealEntry.date, MealEntry.id)
-        )
+def household(db: Session, user: User) -> list[int]:
+    """`user` and their accepted links, in id order: they share one meal plan and pantry."""
+    return sorted({user.id, *linked_user_ids(db, user)})
+
+
+def _household_size(db: Session, ids: list[int]) -> int:
+    return max(len(ids), *db.scalars(select(User.household_size).where(User.id.in_(ids))))
+
+
+def _entries(db: Session, ids: list[int], start: date, end: date) -> list[MealEntry]:
+    rows = db.scalars(
+        select(MealEntry)
+        .where(MealEntry.user_id.in_(ids), MealEntry.date >= start, MealEntry.date < end)
+        .order_by(MealEntry.date, MealEntry.id)
     )
+    # Rows from before two users linked can clash on a slot; the latest one wins.
+    return sorted({(e.date, e.slot): e for e in rows}.values(), key=_by_day)
 
 
-def _upsert(db: Session, user: User, day: date, slot: Slot, meal: MealIn) -> MealEntry:
+def _slot_rows(ids: list[int], day: date, slot: Slot):
+    return delete(MealEntry).where(MealEntry.user_id.in_(ids), MealEntry.date == day, MealEntry.slot == slot)
+
+
+def _upsert(db: Session, user: User, ids: list[int], day: date, slot: Slot, meal: MealIn) -> MealEntry:
+    db.execute(_slot_rows([i for i in ids if i != user.id], day, slot))
     values = meal.model_dump(mode="json")
     stmt = (
         insert(MealEntry)
@@ -149,25 +167,28 @@ def _upsert(db: Session, user: User, day: date, slot: Slot, meal: MealIn) -> Mea
     return db.scalars(stmt, execution_options={"populate_existing": True}).one()
 
 
-def _pantry(db: Session, user: User) -> list[GroceryItem]:
-    rows = db.scalars(select(PantryItem).where(PantryItem.user_id == user.id).order_by(PantryItem.id))
+def _pantry(db: Session, ids: list[int]) -> list[GroceryItem]:
+    rows = db.scalars(select(PantryItem).where(PantryItem.user_id.in_(ids)).order_by(PantryItem.id))
     return [GroceryItem(name=r.name, quantity=r.quantity, unit=r.unit) for r in rows]
 
 
-def _save_pantry(db: Session, user: User, items: list[GroceryItem]) -> GroceryList:
-    db.execute(delete(PantryItem).where(PantryItem.user_id == user.id))
+def _save_pantry(db: Session, user: User, ids: list[int], items: list[GroceryItem]) -> GroceryList:
+    """Replace the household's shared pantry with `items`, owned by `user`."""
+    db.execute(delete(PantryItem).where(PantryItem.user_id.in_(ids)))
     db.add_all(PantryItem(user_id=user.id, **i.model_dump()) for i in items)
     db.commit()
-    return GroceryList(items=_pantry(db, user))
+    return GroceryList(items=_pantry(db, ids))
 
 
-def _shopping(user: User, ag, plans: list[DayPlan], have: list[GroceryItem]) -> ShoppingOut:
-    needed = _ask(ag.groceries_needed, plans, user.household_size)
+def _shopping(db: Session, ids: list[int], ag, plans: list[DayPlan], have: list[GroceryItem]) -> ShoppingOut:
+    needed = _ask(ag.groceries_needed, plans, _household_size(db, ids))
     return ShoppingOut(needed=needed, shopping=_ask(ag.shopping_list, needed, have))
 
 
-def _week_plans(db: Session, user: User, week_start: date, empty="Add some meals to this week first") -> list[DayPlan]:
-    plans = day_plans(_entries(db, user, week_start, week_start + timedelta(days=7)))
+def _week_plans(
+    db: Session, ids: list[int], week_start: date, empty="Add some meals to this week first"
+) -> list[DayPlan]:
+    plans = day_plans(_entries(db, ids, week_start, week_start + timedelta(days=7)))
     if not plans:
         raise HTTPException(400, empty)
     return plans
@@ -184,64 +205,69 @@ def _ask(call, *args):
 def list_meals(month: Annotated[str, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")], user: CurrentUser, db: DB):
     start = date.fromisoformat(f"{month}-01")
     end = (start + timedelta(days=31)).replace(day=1)
-    return _entries(db, user, start, end)
+    return _entries(db, household(db, user), start, end)
 
 
 @router.put("/meals/{day}/{slot}", response_model=MealOut)
 def put_meal(day: date, slot: Slot, body: MealIn, user: CurrentUser, db: DB):
-    entry = _upsert(db, user, day, slot, body)
+    entry = _upsert(db, user, household(db, user), day, slot, body)
     db.commit()
     return entry
 
 
 @router.delete("/meals/{day}/{slot}", status_code=204)
 def delete_meal(day: date, slot: Slot, user: CurrentUser, db: DB):
-    db.execute(delete(MealEntry).where(MealEntry.user_id == user.id, MealEntry.date == day, MealEntry.slot == slot))
+    db.execute(_slot_rows(household(db, user), day, slot))
     db.commit()
 
 
 @router.get("/pantry", response_model=GroceryList)
 def get_pantry(user: CurrentUser, db: DB):
-    return GroceryList(items=_pantry(db, user))
+    return GroceryList(items=_pantry(db, household(db, user)))
 
 
 @router.put("/pantry", response_model=GroceryList)
 def put_pantry(body: PantryIn, user: CurrentUser, db: DB):
-    return _save_pantry(db, user, body.items)
+    return _save_pantry(db, user, household(db, user), body.items)
 
 
 @router.post("/pantry/generate", response_model=GroceryList)
 def generate_pantry(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
     """Last week's pantry plus its shopping list, minus the groceries its meals used."""
-    plans = _week_plans(db, user, body.week_start, "No meals were planned last week")
-    have = _pantry(db, user)
-    week = _shopping(user, ag, plans, have)
+    ids = household(db, user)
+    plans = _week_plans(db, ids, body.week_start, "No meals were planned last week")
+    have = _pantry(db, ids)
+    week = _shopping(db, ids, ag, plans, have)
     remainder = pantry_remainder(have, week.shopping.items, week.needed.items)
     try:  # agent items skip PantryItemIn's column limits until here
         items = PantryIn(items=[i.model_dump() for i in remainder]).items
     except ValidationError:
         raise HTTPException(502, "The meal assistant returned an item the pantry can't hold. Please try again.")
-    return _save_pantry(db, user, items)
+    return _save_pantry(db, user, ids, items)
 
 
 @router.post("/meals/groceries-needed", response_model=GroceryList)
 def groceries_needed(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
-    return _ask(ag.groceries_needed, _week_plans(db, user, body.week_start), user.household_size)
+    ids = household(db, user)
+    return _ask(ag.groceries_needed, _week_plans(db, ids, body.week_start), _household_size(db, ids))
 
 
 @router.post("/meals/shopping-list", response_model=ShoppingOut)
 def shopping_list(body: WeekIn, user: CurrentUser, db: DB, ag: Agents):
-    return _shopping(user, ag, _week_plans(db, user, body.week_start), _pantry(db, user))
+    ids = household(db, user)
+    return _shopping(db, ids, ag, _week_plans(db, ids, body.week_start), _pantry(db, ids))
 
 
 @router.post("/meals/generate", response_model=list[MealOut])
 def generate(body: GenerateIn, user: CurrentUser, db: DB, ag: Agents):
-    prefs = Preferences.model_validate(user.preferences)
-    week = _ask(ag.generate_meals, _pantry(db, user), prefs, user.household_size, body.slots)
+    ids = household(db, user)
+    rows = db.scalars(select(User.preferences).where(User.id.in_(ids)).order_by(User.id))
+    prefs = [Preferences.model_validate(p) for p in rows]
+    week = _ask(ag.generate_meals, _pantry(db, ids), prefs, _household_size(db, ids), body.slots)
     dates = {WEEKDAYS[d.weekday()]: d for d in week_dates(body.week_start)}
-    filled = {(e.date, e.slot) for e in _entries(db, user, body.week_start, body.week_start + timedelta(days=7))}
+    filled = {(e.date, e.slot) for e in _entries(db, ids, body.week_start, body.week_start + timedelta(days=7))}
     saved = [
-        _upsert(db, user, dates[day.weekday], meal.slot, MealIn(**meal.model_dump()))
+        _upsert(db, user, ids, dates[day.weekday], meal.slot, MealIn(**meal.model_dump()))
         for day in week.days
         for meal in day.meals
         if meal.slot in body.slots and (body.overwrite or (dates[day.weekday], meal.slot) not in filled)
