@@ -18,7 +18,7 @@ import { currentMonth, formatDay, monthGrid, today } from '@/lib/month'
 import { cn } from '@/lib/utils'
 
 type CalEvent = { id: number; owner_id: number; title: string; date: string; start_time: string | null; notes: string; shared: boolean; done: boolean }
-type CalTask = { id: number; owner_id: number; title: string; date: string; notes: string; shared: boolean; done: boolean }
+type CalTask = CalEvent // same fields; tasks live under /api/tasks
 type MonthData = { events: CalEvent[]; tasks: CalTask[]; chores: Occurrence[]; people: Person[] }
 type Kind = 'event' | 'task'
 const KIND_NAME = { event: 'Event', task: 'Task' }
@@ -83,6 +83,7 @@ function TaskPill({ task }: { task: CalTask }) {
   return (
     <li className="flex min-w-0 items-center gap-1 rounded-md border border-dashed border-primary/40 px-1 py-0.5 text-xs">
       <Box className="size-3 shrink-0 text-primary" aria-hidden />
+      {task.start_time && <span className="font-semibold tabular-nums">{hhmm(task.start_time)}</span>}
       <span className={cn('truncate', task.done && 'text-muted-foreground line-through')}>{task.title}</span>
       {task.done && <span className="sr-only">, done</span>}
     </li>
@@ -173,12 +174,12 @@ function ShareToggle({ checked, onChange }: { checked: boolean; onChange: (share
   )
 }
 
-/** Adds or edits an event or a task. Only events have a time. */
+/** Adds or edits an event or a task. */
 function ItemForm({ kind, item, day, onDone }: { kind: Kind; item: CalEvent | CalTask | null; day: string; onDone: (saved: boolean) => void }) {
   const [form, setForm] = useState({
     title: item?.title ?? '',
     date: item?.date ?? day,
-    start_time: item && 'start_time' in item ? hhmm(item.start_time) : '',
+    start_time: hhmm(item?.start_time ?? null),
     notes: item?.notes ?? '',
     shared: item?.shared ?? false,
   })
@@ -186,8 +187,7 @@ function ItemForm({ kind, item, day, onDone }: { kind: Kind; item: CalEvent | Ca
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    const { start_time, ...rest } = form
-    const json = { ...rest, title: form.title.trim(), ...(kind === 'event' && { start_time: start_time || null }) }
+    const json = { ...form, title: form.title.trim(), start_time: form.start_time || null }
     try {
       await api(item ? `/api/${kind}s/${item.id}` : `/api/${kind}s`, { method: item ? 'PUT' : 'POST', json })
       toast.success(`${KIND_NAME[kind]} ${item ? 'updated' : 'added'}`)
@@ -202,9 +202,7 @@ function ItemForm({ kind, item, day, onDone }: { kind: Kind; item: CalEvent | Ca
       <Field id={`${kind}-title`} label="Title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       <div className="grid grid-cols-2 gap-3">
         <Field id={`${kind}-date`} label="Date" type="date" className="dark:scheme-dark" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-        {kind === 'event' && (
-          <Field id="event-time" label="Time" type="time" className="dark:scheme-dark" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
-        )}
+        <Field id={`${kind}-time`} label="Time" type="time" className="dark:scheme-dark" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor={`${kind}-notes`}>Notes</Label>
@@ -375,7 +373,10 @@ function DayDialog({
                   className="mt-1 size-4 shrink-0 cursor-pointer accent-primary dark:scheme-dark"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className={cn('font-medium transition-colors', t.done && 'text-muted-foreground line-through')}>{t.title}</p>
+                  <p className="font-medium">
+                    {t.start_time && <span className="mr-2 font-semibold text-primary tabular-nums">{hhmm(t.start_time)}</span>}
+                    <span className={cn('transition-colors', t.done && 'text-muted-foreground line-through')}>{t.title}</span>
+                  </p>
                   {t.notes && <p className="text-sm whitespace-pre-line text-muted-foreground">{t.notes}</p>}
                   <SharedNote item={t} people={people} />
                 </div>
