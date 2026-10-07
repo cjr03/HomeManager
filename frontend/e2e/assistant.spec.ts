@@ -43,6 +43,7 @@ test('talking to Mikayla sends what was heard and reads the reply out as printed
       abort() {}
     }
     w.speechSynthesis.speak = (u) => void w.said.push(u.text)
+    w.AudioContext = undefined // her neural voice is a ~160MB model: e2e checks the browser-voice path
   })
   const username = `voice${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 1e3)}`
   const res = await page.request.post('/api/auth/signup', {
