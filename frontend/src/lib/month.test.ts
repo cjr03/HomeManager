@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentMonth, monthGrid, monthLabel, shiftMonth } from './month'
+import { currentMonth, formatDay, monthGrid, monthLabel, shiftMonth, today } from './month'
 
 describe('monthGrid', () => {
   it('pads a month that starts mid-week with leading and trailing nulls', () => {
@@ -74,5 +74,19 @@ describe('monthLabel', () => {
   it('renders a human month name and year', () => {
     expect(monthLabel('2026-10')).toBe('October 2026')
     expect(monthLabel('2027-01')).toBe('January 2027')
+  })
+})
+
+describe('today', () => {
+  it('formats the given date as YYYY-MM-DD in local time', () => {
+    expect(today(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05')
+    expect(today(new Date(2026, 11, 31, 0, 1))).toBe('2026-12-31')
+  })
+})
+
+describe('formatDay', () => {
+  it('formats an ISO day without timezone drift', () => {
+    expect(formatDay('2026-03-10', { weekday: 'long', month: 'long', day: 'numeric' })).toBe('Tuesday, March 10')
+    expect(formatDay('2026-01-01', { month: 'short', day: 'numeric' })).toBe('Jan 1')
   })
 })

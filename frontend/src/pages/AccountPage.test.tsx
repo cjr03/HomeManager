@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '@/lib/api'
 import { USER, mockApi, renderAt } from '@/test-utils'
 
@@ -161,6 +161,43 @@ describe('AccountPage', () => {
       renderAt('/account')
       await userEvent.click(await screen.findByRole('button', { name: 'Remove' }))
       expect(api).toHaveBeenCalledWith('/api/me/avatar', { method: 'DELETE' })
+    })
+  })
+
+  describe("today's chores", () => {
+    const TODAY = '/api/chores/today?date=2026-03-10'
+    const bins = { chore_id: 3, title: 'Bins', date: '2026-03-10', assignee: { id: 1, username: 'ann', avatar: null }, owner_id: 5, done: false }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 2, 10, 23, 30))
+    })
+    afterEach(() => vi.useRealTimers())
+
+    it('lists my chores for the local date and marks one done', async () => {
+      setup({ [`GET ${TODAY}`]: [bins], 'POST /api/chores/3/done/2026-03-10': undefined })
+      const box = await screen.findByRole('checkbox', { name: 'Bins' })
+      expect(box).not.toBeChecked()
+      await userEvent.click(box)
+      expect(api).toHaveBeenCalledWith('/api/chores/3/done/2026-03-10', { method: 'POST' })
+      expect(box).toBeChecked()
+    })
+
+    it('says when nothing is due', async () => {
+      setup({ [`GET ${TODAY}`]: [] })
+      expect(await screen.findByText('Nothing due today.')).toBeInTheDocument()
+    })
+
+    it('keeps the box unchanged when the update fails', async () => {
+      setup({
+        [`GET ${TODAY}`]: [bins],
+        'POST /api/chores/3/done/2026-03-10': () => {
+          throw new ApiError(400, "The chore isn't due on that date")
+        },
+      })
+      const box = await screen.findByRole('checkbox', { name: 'Bins' })
+      await userEvent.click(box)
+      expect(box).not.toBeChecked()
     })
   })
 })

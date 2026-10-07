@@ -62,9 +62,10 @@ describe('App routes and shell (signed in)', () => {
 
   it('page month navigation changes the displayed month', async () => {
     renderAt('/calendar')
-    const before = (await screen.findByRole('heading', { level: 2 })).textContent
+    const month = { level: 2, name: /\d{4}$/ }
+    const before = (await screen.findByRole('heading', month)).textContent
     await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
-    expect(screen.getByRole('heading', { level: 2 }).textContent).not.toBe(before)
+    expect(screen.getByRole('heading', month).textContent).not.toBe(before)
   })
 })
 
