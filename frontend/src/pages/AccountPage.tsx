@@ -1,5 +1,5 @@
 import { Check, ImageUp, Trash2, UserPlus, X } from 'lucide-react'
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useReducer, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { errorText, Field, FormError } from '@/components/Field'
 import { HouseholdInput, PreferencesFields } from '@/components/ProfileFields'
@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
 import { passwordError } from '@/pages/LoginPage'
+import { useAssistant } from '@/lib/assistant'
 import { useAuth, useUser } from '@/lib/auth'
 import { today } from '@/lib/month'
 
@@ -333,6 +334,9 @@ function TodayChoresCard() {
 }
 
 export function AccountPage() {
+  const user = useUser()
+  const [version, reload] = useReducer((n: number) => n + 1, 0) // bumped when the assistant changes data
+  useAssistant({}, reload)
   return (
     <div className="space-y-6">
       <div>
@@ -341,11 +345,12 @@ export function AccountPage() {
       </div>
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_1.2fr]">
         <div className="space-y-6">
-          <TodayChoresCard />
+          <TodayChoresCard key={version} />
           <ProfileCard />
           <LinksCard />
         </div>
-        <PreferencesCard />
+        {/* Remounts with the saved values when they change, e.g. after the assistant edits them. */}
+        <PreferencesCard key={JSON.stringify([user.household_size, user.preferences])} />
       </div>
     </div>
   )

@@ -26,6 +26,7 @@ class Event(Base):
     start_time: Mapped[dt.time | None]
     notes: Mapped[str] = mapped_column(Text, default="")
     shared: Mapped[bool] = mapped_column(default=False)
+    done: Mapped[bool] = mapped_column(default=False)
 
 
 class Task(Base):
@@ -108,6 +109,7 @@ class EventOut(EventIn):
     model_config = ConfigDict(from_attributes=True)
     id: int
     owner_id: int
+    done: bool  # read-only: set through /events/{id}/done, so PUT leaves it alone
 
 
 class TaskIn(BaseModel):
@@ -181,18 +183,18 @@ class MonthOut(BaseModel):
 
 # ---- helpers ----
 
-def _my_event(db: Session, event_id: int, user: User) -> Event:
-    ev = db.get(Event, event_id)
-    if ev is None or ev.owner_id != user.id:
-        raise HTTPException(404, "Event not found")
-    return ev
-
-
 def _visible_task(db: Session, task_id: int, user: User, *, owner_only: bool = False) -> Task:
     t = db.get(Task, task_id)
     if t is None or not (t.owner_id == user.id or (not owner_only and t.shared and t.owner_id in linked_user_ids(db, user))):
         raise HTTPException(404, "Task not found")
     return t
+
+
+def _visible_event(db: Session, event_id: int, user: User, *, owner_only: bool = False) -> Event:
+    ev = db.get(Event, event_id)
+    if ev is None or not (ev.owner_id == user.id or (not owner_only and ev.shared and ev.owner_id in linked_user_ids(db, user))):
+        raise HTTPException(404, "Event not found")
+    return ev
 
 
 def _visible_chore(db: Session, chore_id: int, user: User, *, owner_only: bool = False) -> Chore:
@@ -277,7 +279,7 @@ def create_event(body: EventIn, user: CurrentUser, db: DB):
 
 @router.put("/events/{event_id}", response_model=EventOut)
 def update_event(event_id: int, body: EventIn, user: CurrentUser, db: DB):
-    ev = _my_event(db, event_id, user)
+    ev = _visible_event(db, event_id, user, owner_only=True)
     for k, v in body.model_dump().items():
         setattr(ev, k, v)
     db.commit()
@@ -286,7 +288,7 @@ def update_event(event_id: int, body: EventIn, user: CurrentUser, db: DB):
 
 @router.delete("/events/{event_id}", status_code=204)
 def delete_event(event_id: int, user: CurrentUser, db: DB):
-    db.delete(_my_event(db, event_id, user))
+    db.delete(_visible_event(db, event_id, user, owner_only=True))
     db.commit()
 
 
@@ -322,6 +324,18 @@ def task_done(task_id: int, user: CurrentUser, db: DB):
 @router.delete("/tasks/{task_id}/done", status_code=204)
 def task_undone(task_id: int, user: CurrentUser, db: DB):
     _visible_task(db, task_id, user).done = False
+    db.commit()
+
+
+@router.post("/events/{event_id}/done", status_code=204)
+def event_done(event_id: int, user: CurrentUser, db: DB):
+    _visible_event(db, event_id, user).done = True
+    db.commit()
+
+
+@router.delete("/events/{event_id}/done", status_code=204)
+def event_undone(event_id: int, user: CurrentUser, db: DB):
+    _visible_event(db, event_id, user).done = False
     db.commit()
 
 

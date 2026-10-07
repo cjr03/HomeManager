@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '@/lib/api'
+import { today } from '@/lib/month'
 import { USER, mockApi, renderAt } from '@/test-utils'
 
 vi.mock('@/lib/api', async (orig) => ({ ...(await orig<typeof import('@/lib/api')>()), api: vi.fn() }))
@@ -96,6 +97,27 @@ describe('AccountPage', () => {
       method: 'PUT',
       json: { household_size: 3, preferences: { ...USER.preferences, diet: 'vegan' } },
     })
+  })
+
+  it('shows preferences and chores the assistant changed', async () => {
+    let me = USER
+    let chores = [{ chore_id: 3, title: 'Bins', date: '2026-03-10', assignee_id: USER.id, owner_id: USER.id, done: false }]
+    mockApi({
+      'GET /api/me': () => me,
+      'GET /api/links': LINKS,
+      [`GET /api/chores/today?date=${today()}`]: () => chores,
+      'POST /api/assistant': () => {
+        me = { ...USER, household_size: 4 }
+        chores = [{ ...chores[0], done: true }]
+        return { reply: 'Done.', changed: true }
+      },
+    })
+    renderAt('/account')
+    expect(await screen.findByRole('checkbox', { name: 'Bins' })).not.toBeChecked()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Message the assistant' }), 'We are 4 now and bins are done{Enter}')
+    expect(await screen.findByText('Done.')).toBeInTheDocument()
+    expect(await screen.findByRole('checkbox', { name: 'Bins', checked: true })).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('4')).toBe(screen.getByLabelText('People in your household'))
   })
 
   it('lists links and sends, accepts, cancels and unlinks', async () => {

@@ -18,8 +18,8 @@ const occ = (chore_id: number, title: string, date: string, done = false, assign
 })
 const MONTH = {
   events: [
-    { id: 1, owner_id: USER.id, title: 'Dentist', date: '2026-03-10', start_time: '09:30:00', notes: '', shared: false },
-    { id: 2, owner_id: 5, title: 'Party', date: '2026-03-14', start_time: null, notes: 'Bring cake', shared: true },
+    { id: 1, owner_id: USER.id, title: 'Dentist', date: '2026-03-10', start_time: '09:30:00', notes: '', shared: false, done: false },
+    { id: 2, owner_id: 5, title: 'Party', date: '2026-03-14', start_time: null, notes: 'Bring cake', shared: true, done: true },
   ],
   tasks: [
     { id: 11, owner_id: USER.id, title: 'Pay rent', date: '2026-03-10', notes: 'Online', shared: false, done: false },
@@ -181,6 +181,34 @@ describe('CalendarPage', () => {
       method: 'POST',
       json: { title: 'Pack', date: '2026-04-01', notes: '', shared: false },
     })
+  })
+
+  it('marks events done from the day dialog and shows done events struck through', async () => {
+    setup({
+      'POST /api/events/1/done': undefined,
+      'DELETE /api/events/2/done': () => {
+        throw new ApiError(404, 'Event not found')
+      },
+    })
+    const party = within(await day('Saturday, March 14')).getByText('Party')
+    expect(party.closest('li')).toHaveTextContent('Party, done')
+    expect(party).toHaveClass('line-through')
+
+    await userEvent.click(await day('Tuesday, March 10'))
+    const box = within(screen.getByRole('dialog')).getByRole('checkbox', { name: 'Dentist' })
+    expect(box).not.toBeChecked()
+    await userEvent.click(box)
+    expect(api).toHaveBeenCalledWith('/api/events/1/done', { method: 'POST' })
+    expect(box).toBeChecked()
+    await userEvent.keyboard('{Escape}')
+    expect(within(await day('Tuesday, March 10')).getByText('Dentist').closest('li')).toHaveTextContent('Dentist, done')
+
+    await userEvent.click(await day('Saturday, March 14'))
+    const partyBox = within(screen.getByRole('dialog')).getByRole('checkbox', { name: 'Party' })
+    expect(partyBox).toBeChecked()
+    await userEvent.click(partyBox)
+    expect(api).toHaveBeenCalledWith('/api/events/2/done', { method: 'DELETE' })
+    expect(partyBox).toBeChecked() // reverted after the failed save
   })
 
   it('lists overflowing items in the day dialog', async () => {

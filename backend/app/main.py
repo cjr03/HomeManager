@@ -8,7 +8,7 @@ from sqlalchemy import text
 # backend/.env (ANTHROPIC_API_KEY etc.); real env vars win. Loaded before app imports read the env.
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from app import accounts, auth, budget, calendar, meals
+from app import accounts, assistant, auth, budget, calendar, meals
 from app.db import Base, engine
 
 
@@ -18,6 +18,7 @@ async def lifespan(_: FastAPI):
     # ponytail: hand-written column add until Alembic lands; create_all skips columns on existing tables.
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE chores ADD COLUMN IF NOT EXISTS shared boolean NOT NULL DEFAULT false"))
+        conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS done boolean NOT NULL DEFAULT false"))
         conn.execute(text("ALTER TABLE chores ADD COLUMN IF NOT EXISTS weekdays smallint[] NOT NULL DEFAULT '{}'"))
         conn.execute(text(
             "ALTER TABLE budget_lines ADD COLUMN IF NOT EXISTS partner_id integer REFERENCES users(id) ON DELETE CASCADE"
@@ -33,6 +34,7 @@ app.include_router(accounts.router)
 app.include_router(budget.router)
 app.include_router(calendar.router)
 app.include_router(meals.router)
+app.include_router(assistant.router)
 
 
 @app.get("/api/health")

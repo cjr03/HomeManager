@@ -1,5 +1,5 @@
 import { Loader2, Plus, Sparkles, Trash2 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import type { Item } from '@/components/DayDialog'
 import { errorText } from '@/components/Field'
@@ -12,15 +12,24 @@ type Row = { name: string; quantity: string; unit: string }
 
 const toRows = ({ items }: { items: Item[] }) => items.map((i) => ({ ...i, quantity: String(i.quantity) }))
 
-/** `lastWeek` is the Sunday starting the week whose shopping and meals "Generate pantry" settles. */
-export function PantryCard({ lastWeek }: { lastWeek: string }) {
+/** `lastWeek` is the Sunday starting the week whose shopping and meals "Generate pantry" settles.
+ * A new `version` refetches; rows are replaced only if the saved pantry changed, so unsaved edits survive. */
+export function PantryCard({ lastWeek, version }: { lastWeek: string; version: number }) {
   const [rows, setRows] = useState<Row[] | null>(null) // null until loaded, so a late load can't wipe edits
   const [generating, setGenerating] = useState(false)
   const [generatedFor, setGeneratedFor] = useState<string | null>(null) // once per week: a repeat would subtract it twice
+  const saved = useRef('') // the server's pantry as last shown
+  const show = (p: { items: Item[] }) => {
+    saved.current = JSON.stringify(p.items)
+    setRows(toRows(p))
+  }
 
   useEffect(() => {
-    api<{ items: Item[] }>('/api/pantry').then((p) => setRows(toRows(p)), (err) => toast.error(errorText(err)))
-  }, [])
+    api<{ items: Item[] }>('/api/pantry').then(
+      (p) => JSON.stringify(p.items) !== saved.current && show(p),
+      (err) => toast.error(errorText(err)),
+    )
+  }, [version])
 
   if (!rows) return null
 
@@ -35,9 +44,9 @@ export function PantryCard({ lastWeek }: { lastWeek: string }) {
       .map((r) => ({ name: r.name.trim(), quantity: Number(r.quantity), unit: r.unit.trim() }))
     setGenerating(generate)
     try {
-      setRows(toRows(await api<{ items: Item[] }>('/api/pantry', { method: 'PUT', json: { items } })))
+      show(await api<{ items: Item[] }>('/api/pantry', { method: 'PUT', json: { items } }))
       if (generate) {
-        setRows(toRows(await api<{ items: Item[] }>('/api/pantry/generate', { method: 'POST', json: { week_start: lastWeek } })))
+        show(await api<{ items: Item[] }>('/api/pantry/generate', { method: 'POST', json: { week_start: lastWeek } }))
         setGeneratedFor(lastWeek)
       }
       toast.success(generate ? 'Pantry generated from last week' : 'Pantry saved')

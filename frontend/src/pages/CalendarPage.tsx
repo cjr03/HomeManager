@@ -12,11 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
+import { useAssistant } from '@/lib/assistant'
 import { useUser } from '@/lib/auth'
 import { currentMonth, formatDay, monthGrid, today } from '@/lib/month'
 import { cn } from '@/lib/utils'
 
-type CalEvent = { id: number; owner_id: number; title: string; date: string; start_time: string | null; notes: string; shared: boolean }
+type CalEvent = { id: number; owner_id: number; title: string; date: string; start_time: string | null; notes: string; shared: boolean; done: boolean }
 type CalTask = { id: number; owner_id: number; title: string; date: string; notes: string; shared: boolean; done: boolean }
 type MonthData = { events: CalEvent[]; tasks: CalTask[]; chores: Occurrence[]; people: Person[] }
 type Kind = 'event' | 'task'
@@ -66,7 +67,13 @@ function EventPill({ event }: { event: CalEvent }) {
   return (
     <li className="flex min-w-0 items-center gap-1 rounded-md bg-primary/12 px-1.5 py-0.5 text-xs text-accent-foreground">
       {event.start_time && <span className="font-semibold tabular-nums">{hhmm(event.start_time)}</span>}
-      <span className="truncate">{event.title}</span>
+      <span className={cn('truncate', event.done && 'text-muted-foreground line-through')}>{event.title}</span>
+      {event.done && (
+        <>
+          <Check className="ml-auto size-3 shrink-0 text-primary" aria-hidden />
+          <span className="sr-only">, done</span>
+        </>
+      )}
     </li>
   )
 }
@@ -258,7 +265,7 @@ function DayDialog({
   onClose,
   onChanged,
   onToggled,
-  onTaskToggled,
+  onItemToggled,
 }: {
   day: string | null
   data: MonthData
@@ -266,7 +273,7 @@ function DayDialog({
   onClose: () => void
   onChanged: () => void
   onToggled: (chore: Occurrence, done: boolean) => void
-  onTaskToggled: (task: CalTask, done: boolean) => void
+  onItemToggled: (kind: Kind, id: number, done: boolean) => void
 }) {
   const me = useUser()
   const [editing, setEditing] = useState<{ kind: Kind; item: CalEvent | CalTask | null } | null>(null)
@@ -285,12 +292,12 @@ function DayDialog({
   }
 
   // Optimistic, like ChoreCheck: flip now, flip back if the save fails.
-  async function toggle(task: CalTask, done: boolean) {
-    onTaskToggled(task, done)
+  async function toggle(kind: Kind, item: CalEvent | CalTask, done: boolean) {
+    onItemToggled(kind, item.id, done)
     try {
-      await api(`/api/tasks/${task.id}/done`, { method: done ? 'POST' : 'DELETE' })
+      await api(`/api/${kind}s/${item.id}/done`, { method: done ? 'POST' : 'DELETE' })
     } catch (err) {
-      onTaskToggled(task, !done)
+      onItemToggled(kind, item.id, !done)
       toast.error(errorText(err))
     }
   }
@@ -332,11 +339,18 @@ function DayDialog({
           <ul className="space-y-1">
             {events.map((e) => (
               <li key={e.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-muted/60">
+                <input
+                  type="checkbox"
+                  aria-label={e.title}
+                  checked={e.done}
+                  onChange={(ev) => void toggle('event', e, ev.target.checked)}
+                  className="mt-1 size-4 shrink-0 cursor-pointer accent-primary dark:scheme-dark"
+                />
                 <span className="w-11 shrink-0 pt-0.5 text-sm font-semibold text-primary tabular-nums">
                   {hhmm(e.start_time) || 'All day'}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">{e.title}</p>
+                  <p className={cn('font-medium transition-colors', e.done && 'text-muted-foreground line-through')}>{e.title}</p>
                   {e.notes && <p className="text-sm whitespace-pre-line text-muted-foreground">{e.notes}</p>}
                   <SharedNote item={e} people={people} />
                 </div>
@@ -357,7 +371,7 @@ function DayDialog({
                   type="checkbox"
                   aria-label={t.title}
                   checked={t.done}
-                  onChange={(e) => void toggle(t, e.target.checked)}
+                  onChange={(e) => void toggle('task', t, e.target.checked)}
                   className="mt-1 size-4 shrink-0 cursor-pointer accent-primary dark:scheme-dark"
                 />
                 <div className="min-w-0 flex-1">
@@ -622,8 +636,14 @@ export function CalendarPage() {
       chores: d.chores.map((c) => (c.chore_id === chore.chore_id && c.date === chore.date ? { ...c, done } : c)),
     }))
 
-  const taskToggled = (task: CalTask, done: boolean) =>
-    setData((d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === task.id ? { ...t, done } : t)) }))
+  const itemToggled = (kind: Kind, id: number, done: boolean) =>
+    setData((d) =>
+      kind === 'event'
+        ? { ...d, events: d.events.map((e) => (e.id === id ? { ...e, done } : e)) }
+        : { ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, done } : t)) },
+    )
+
+  useAssistant({ month }, reload)
 
   return (
     <div className="space-y-6">
@@ -675,7 +695,7 @@ export function CalendarPage() {
         onClose={() => setOpenDay(null)}
         onChanged={reload}
         onToggled={toggled}
-        onTaskToggled={taskToggled}
+        onItemToggled={itemToggled}
       />
       <Dialog open={adding.open} onOpenChange={(open) => setAdding({ ...adding, open })}>
         <DialogContent aria-describedby={undefined} className="max-h-[90svh] overflow-y-auto rounded-2xl bg-card sm:max-w-md">

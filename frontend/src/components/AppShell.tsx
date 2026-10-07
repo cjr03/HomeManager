@@ -1,5 +1,6 @@
 import { CalendarDays, CircleUser, House, LogOut, PiggyBank, UtensilsCrossed } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
+import { AssistantPanel } from '@/components/AssistantPanel'
 import { UserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
 import { useAuth, useUser } from '@/lib/auth'
@@ -17,7 +18,7 @@ export function AppShell() {
   const { logout } = useAuth()
   return (
     <div className="min-h-svh pb-28 sm:pb-0">
-      <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-5 sm:px-6">
+      <header className="mx-auto flex max-w-6xl xl:max-w-[96rem] items-center justify-between gap-4 px-4 py-5 sm:px-6">
         <Link to="/meals" className="flex items-center gap-2.5 text-lg font-bold tracking-tight">
           <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-float">
             <House className="size-5" aria-hidden />
@@ -58,9 +59,13 @@ export function AppShell() {
           </Button>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
-        <Outlet />
-      </main>
+      {/* xl screens: the page plus a sticky assistant column, keeping the page at max-w-6xl. */}
+      <div className="mx-auto max-w-6xl items-start gap-6 px-4 pb-10 sm:px-6 xl:grid xl:max-w-[96rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <main className="min-w-0">
+          <Outlet />
+        </main>
+        <AssistantPanel />
+      </div>
     </div>
   )
 }

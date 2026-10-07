@@ -1,5 +1,5 @@
 import { Copy, Loader2, ShoppingCart, Sparkles, Users } from 'lucide-react'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useReducer, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { DayDialog, fmtItem, longDate, SLOTS, type Item, type Meal, type Slot } from '@/components/DayDialog'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { api } from '@/lib/api'
+import { useAssistant } from '@/lib/assistant'
 import { useUser } from '@/lib/auth'
 import { addDays, currentMonth, monthGrid, today, weekStart } from '@/lib/month'
 import { cn } from '@/lib/utils'
@@ -338,7 +339,9 @@ export function MealsPage() {
   const [busy, setBusy] = useState<Agent | null>(null)
   const [needed, setNeeded] = useState<Item[] | null>(null)
   const [shopping, setShopping] = useState<ShoppingItem[] | null>(null)
-  const [builds, setBuilds] = useState(0) // remounts the shopping card so check-offs reset
+  const [builds, setBuilds] = useState(0) // remounts the shopping card so check-offs reset, as does a changed list
+  const [version, reload] = useReducer((n: number) => n + 1, 0) // bumped when the assistant changes data
+  useAssistant({ week_start: week }, reload)
 
   const load = useCallback(async () => {
     try {
@@ -347,12 +350,14 @@ export function MealsPage() {
       toast.error(errorText(err))
     }
   }, [month])
-  useEffect(() => void load(), [load])
+  useEffect(() => void load(), [load, version])
 
   useEffect(() => {
-    let stale = false
     setNeeded(null)
     setShopping(null)
+  }, [week])
+  useEffect(() => {
+    let stale = false
     api<ShoppingOut | null>(`/api/meals/shopping-list?week_start=${week}`)
       .then((r) => {
         if (stale || !r) return
@@ -363,7 +368,7 @@ export function MealsPage() {
     return () => {
       stale = true
     }
-  }, [week])
+  }, [week, version])
 
   const byDay = new Map<string, DayMeals>()
   for (const m of meals) byDay.set(m.date, { ...byDay.get(m.date), [m.slot]: m })
@@ -422,7 +427,7 @@ export function MealsPage() {
       <div className="contents lg:block lg:space-y-6">
         <MonthCard month={month} onMonth={changeMonth} meals={byDay} week={week} onWeek={setWeek} onOpen={setOpenDay} />
         <div className="order-3 space-y-6 empty:hidden">
-          {shopping && <ShoppingListCard key={builds} items={shopping} />}
+          {shopping && <ShoppingListCard key={`${builds}:${JSON.stringify(shopping)}`} items={shopping} />}
           {needed && (
           <SectionCard title="Groceries needed" description={`Everything the meals for ${weekLabel(week)} call for.`}>
             <ul className="columns-1 gap-6 text-sm sm:columns-2">
@@ -451,7 +456,7 @@ export function MealsPage() {
         </SectionCard>
         <div className="order-4 space-y-6">
           <HouseholdCard />
-          <PantryCard lastWeek={addDays(week, -7)} />
+          <PantryCard version={version} lastWeek={addDays(week, -7)} />
         </div>
       </div>
 

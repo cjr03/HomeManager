@@ -201,4 +201,29 @@ describe('BudgetPage', () => {
     await overview()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
   })
+
+  it('sends the partner on the shared tab to the assistant and refetches the shared month after a change', async () => {
+    let changed = false
+    const shared = (name: string) => ({
+      members: [{ id: 1, username: 'ann', avatar: null }, BOB],
+      lines: [line(4, 'expense', name, '600.00', null, 2, 1)],
+      summary: SUMMARY,
+      per_member: [{ user_id: 1, summary: SUMMARY }, { user_id: 2, summary: SUMMARY }],
+    })
+    const assistant = vi.fn(() => {
+      changed = true
+      return { reply: 'Done.', changed: true }
+    })
+    setup({
+      'GET /api/links': { ...NO_LINKS, linked: [{ id: 9, user_id: 2, username: 'bob', avatar: null }] },
+      [`GET /api/budget/${M}`]: MINE,
+      [`GET /api/budget/${M}/shared/2`]: () => shared(changed ? 'Utilities' : 'Groceries'),
+      'POST /api/assistant': assistant,
+    })
+    await userEvent.click(await screen.findByRole('tab', { name: 'Shared with bob' }))
+    await screen.findByRole('button', { name: 'Edit Groceries' })
+    await userEvent.type(screen.getByRole('textbox', { name: 'Message the assistant' }), 'Rename it{Enter}')
+    expect(await screen.findByRole('button', { name: 'Edit Utilities' })).toBeInTheDocument()
+    expect(assistant).toHaveBeenCalledWith(expect.objectContaining({ json: expect.objectContaining({ context: { month: M, partner_id: 2 } }) }))
+  })
 })

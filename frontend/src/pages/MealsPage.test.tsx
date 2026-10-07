@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -286,6 +286,52 @@ describe('MealsPage', () => {
         expect(toast.error).toHaveBeenCalledWith('The meal assistant is unavailable right now. Please try again.'),
       )
       expect(screen.getByRole('button', { name: 'Build shopping list' })).toBeEnabled()
+    })
+  })
+
+  describe('assistant', () => {
+    const list = (...names: string[]) => ({
+      needed: { items: [] },
+      shopping: { items: names.map((name) => ({ name, quantity: 1, unit: '', category: 'produce' })) },
+    })
+    const calls = (path: string) => vi.mocked(api).mock.calls.filter(([p, init]) => p === path && !init?.method).length
+    const SHOP = '/api/meals/shopping-list?week_start=2026-10-04'
+
+    async function setupAssistant(after: { meals?: unknown[]; shopping?: unknown; pantry?: unknown }) {
+      let changed = false
+      setup({
+        'GET /api/meals?month=2026-10': () => (changed && after.meals) || [DINNER, BREAKFAST],
+        [`GET ${SHOP}`]: () => (changed && after.shopping) || list('Onion', 'Garlic'),
+        'GET /api/pantry': () => (changed && after.pantry) || PANTRY,
+        'POST /api/assistant': (init: { json: { context: unknown } }) => {
+          changed = true
+          expect(init.json.context).toEqual({ week_start: '2026-10-04' })
+          return { reply: 'Done.', changed: true }
+        },
+      })
+      const card = await screen.findByRole('region', { name: 'Shopping list' })
+      await userEvent.click(within(card).getByLabelText('1 Onion'))
+      const qty = await screen.findByLabelText('Quantity of Milk')
+      await userEvent.clear(qty)
+      await userEvent.type(qty, '3')
+      await userEvent.type(screen.getByRole('textbox', { name: 'Message the assistant' }), 'Do it{Enter}')
+      await screen.findByText('Done.')
+      await waitFor(() => expect(calls(SHOP)).toBe(2))
+      await waitFor(() => expect(calls('/api/pantry')).toBe(2))
+    }
+
+    it('refetches meals and the shopping list, keeping check-offs and unsaved pantry edits when they did not change', async () => {
+      await setupAssistant({ meals: [{ ...DINNER, name: 'Pad thai' }] })
+      expect(await screen.findByText('Pad thai')).toBeInTheDocument()
+      expect(within(screen.getByRole('region', { name: 'Shopping list' })).getByLabelText('1 Onion')).toBeChecked()
+      expect(screen.getByLabelText('Quantity of Milk')).toHaveValue(3)
+    })
+
+    it('shows a changed shopping list and pantry', async () => {
+      await setupAssistant({ shopping: list('Leek'), pantry: { items: [{ name: 'Eggs', quantity: 6, unit: '' }] } })
+      const card = screen.getByRole('region', { name: 'Shopping list' })
+      expect(await within(card).findByLabelText('1 Leek')).not.toBeChecked()
+      expect(await screen.findByLabelText('Quantity of Eggs')).toHaveValue(6)
     })
   })
 })
