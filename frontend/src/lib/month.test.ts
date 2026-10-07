@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { currentMonth, formatDay, monthGrid, monthLabel, shiftMonth, today } from './month'
+import { addDays, currentMonth, formatDay, monthGrid, monthLabel, shiftMonth, today, weekStart } from './month'
+64dc677 (test(meals): Meals page component tests, date helper tests, E2E flow (RED: 14 failing))
 
 describe('monthGrid', () => {
   it('pads a month that starts mid-week with leading and trailing nulls', () => {
@@ -77,10 +78,27 @@ describe('monthLabel', () => {
   })
 })
 
+describe('addDays', () => {
+  it('crosses month and year boundaries', () => {
+    expect(addDays('2026-10-31', 1)).toBe('2026-11-01')
+    expect(addDays('2027-01-01', -1)).toBe('2026-12-31')
+    expect(addDays('2026-10-04', 6)).toBe('2026-10-10')
+  })
+})
+
+describe('weekStart', () => {
+  it('returns the Sunday on or before the day', () => {
+    expect(weekStart('2026-10-04')).toBe('2026-10-04')
+    expect(weekStart('2026-10-10')).toBe('2026-10-04')
+    expect(weekStart('2026-10-01')).toBe('2026-09-27')
+  })
+})
+
 describe('today', () => {
   it('formats the given date as YYYY-MM-DD in local time', () => {
     expect(today(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05')
     expect(today(new Date(2026, 11, 31, 0, 1))).toBe('2026-12-31')
+    expect(today(new Date(2026, 9, 6, 23, 30))).toBe('2026-10-06')
   })
 })
 
