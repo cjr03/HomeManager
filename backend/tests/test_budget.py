@@ -113,7 +113,7 @@ def test_create_list_and_summary(auth_client):
     assert r.status_code == 201
     created = r.json()
     assert created | {"id": 0} == {
-        "id": 0, "owner_id": auth_client.user.id, "month": "2026-10", "kind": "income",
+        "id": 0, "owner_id": auth_client.user.id, "partner_id": None, "month": "2026-10", "kind": "income",
         "name": "Salary", "a": "5000.00", "b": "3800.50", "position": 0,
     }
     add(auth_client, "2026-10", "expense", "Rent", "1500")
@@ -210,14 +210,17 @@ def link(db, a, b, status="accepted"):
     db.flush()
 
 
-def test_shared_view_combines_linked_users(db, make_user, client_for):
-    ann, bob = make_user("ann"), make_user("bob", avatar="data:image/png;base64,AA==")
+def test_shared_view_shows_only_lines_shared_by_the_pair(db, make_user, client_for):
+    ann, bob, cat = make_user("ann"), make_user("bob", avatar="data:image/png;base64,AA=="), make_user()
     link(db, bob, ann)
+    link(db, ann, cat)
     ca, cb = client_for(ann), client_for(bob)
     add(ca, "2026-10", "income", "Ann pay", "4000", "3000")
-    add(cb, "2026-10", "income", "Bob pay", "2000", "1500")
-    add(cb, "2026-10", "expense", "Rent", "1000", "1000")
-    add(cb, "2026-11", "expense", "Next month", "1")
+    add(cb, "2026-10", "asset", "Bob car", "9000")
+    shared_add(ca, "2026-10", bob, "income", "Rental", "2000", "1500")
+    shared_add(cb, "2026-10", ann, "expense", "Rent", "1000", "1000")
+    shared_add(ca, "2026-10", cat, "expense", "Cat food", "50")
+    shared_add(cb, "2026-11", ann, "expense", "Next month", "1")
 
     r = ca.get(f"/api/budget/2026-10/shared/{bob.id}")
     assert r.status_code == 200
@@ -226,28 +229,25 @@ def test_shared_view_combines_linked_users(db, make_user, client_for):
         {"id": ann.id, "username": "ann", "avatar": None},
         {"id": bob.id, "username": "bob", "avatar": "data:image/png;base64,AA=="},
     ]
-    assert sorted((x["owner_id"], x["name"]) for x in body["lines"]) == [
-        (ann.id, "Ann pay"), (bob.id, "Bob pay"), (bob.id, "Rent"),
-    ]
-    assert body["summary"]["income"] == {"pre_tax": "6000.00", "post_tax": "4500.00"}
-    assert body["summary"]["remainder"]["actual"] == "3500.00"
+    assert sorted(x["name"] for x in body["lines"]) == ["Rent", "Rental"]
+    assert body["summary"]["income"] == {"pre_tax": "2000.00", "post_tax": "1500.00"}
+    assert body["summary"]["remainder"]["actual"] == "500.00"
+    assert body["summary"]["assets"] == "0.00"
+    # each member carries half of every shared line
     per = {m["user_id"]: m["summary"] for m in body["per_member"]}
-    assert per[ann.id]["income"]["post_tax"] == "3000.00"
-    assert per[bob.id]["remainder"]["actual"] == "500.00"
+    assert per[ann.id]["income"]["post_tax"] == per[bob.id]["income"]["post_tax"] == "750.00"
 
     # works from the other side too
-    assert cb.get(f"/api/budget/2026-10/shared/{ann.id}").status_code == 200
+    assert cb.get(f"/api/budget/2026-10/shared/{ann.id}").json()["lines"] == body["lines"]
 
 
-def test_shared_view_is_read_only_for_linked_partner(db, make_user, client_for):
+def test_linked_partner_cannot_edit_personal_lines(db, make_user, client_for):
     ann, bob = make_user(), make_user()
     link(db, ann, bob)
-    ca, cb = client_for(ann), client_for(bob)
-    line_id = add(ca, "2026-10", "asset", "Car", "9000").json()["id"]
-    assert cb.get(f"/api/budget/2026-10/shared/{ann.id}").json()["lines"][0]["id"] == line_id
+    cb = client_for(bob)
+    line_id = add(client_for(ann), "2026-10", "asset", "Car", "9000").json()["id"]
     assert cb.patch(f"/api/budget/lines/{line_id}", json={"name": "Mine", "a": "1"}).status_code == 404
     assert cb.delete(f"/api/budget/lines/{line_id}").status_code == 404
-    assert [(x["name"], x["a"]) for x in ca.get("/api/budget/2026-10").json()["lines"]] == [("Car", "9000.00")]
 
 
 def test_shared_view_requires_accepted_link(db, make_user, client_for):
@@ -258,3 +258,78 @@ def test_shared_view_requires_accepted_link(db, make_user, client_for):
     assert ca.get(f"/api/budget/2026-10/shared/{cat.id}").status_code == 404
     assert ca.get(f"/api/budget/2026-10/shared/{ann.id}").status_code == 404
     assert ca.get("/api/budget/2026-10/shared/999999").status_code == 404
+
+
+# ---- shared lines ----
+
+def shared_add(c, month, other, kind, name, a, b=None):
+    return c.post(f"/api/budget/{month}/shared/{other.id}/lines", json={"kind": kind, "name": name, "a": a, "b": b})
+
+
+def test_shared_lines_are_editable_by_both_members(db, make_user, client_for):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    ca, cb = client_for(ann), client_for(bob)
+    r = shared_add(ca, "2026-10", bob, "loan", "Mortgage", "200000")
+    assert r.status_code == 201
+    assert (r.json()["owner_id"], r.json()["partner_id"]) == (ann.id, bob.id)
+    line_id = r.json()["id"]
+
+    assert cb.patch(f"/api/budget/lines/{line_id}", json={"name": "Home loan", "a": "199000"}).status_code == 200
+    lines = ca.get(f"/api/budget/2026-10/shared/{bob.id}").json()["lines"]
+    assert [(x["name"], x["a"], x["partner_id"]) for x in lines] == [("Home loan", "199000.00", bob.id)]
+    assert cb.delete(f"/api/budget/lines/{line_id}").status_code == 204
+    assert ca.get(f"/api/budget/2026-10/shared/{bob.id}").json()["lines"] == []
+
+
+def test_personal_view_includes_half_of_shared_expenses_and_savings(db, make_user, client_for):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    ca, cb = client_for(ann), client_for(bob)
+    add(ca, "2026-10", "income", "Pay", "4000", "3000")
+    shared_add(cb, "2026-10", ann, "expense", "Rent", "2000", "1800")
+    shared_add(cb, "2026-10", ann, "savings", "Holiday", "400")
+    shared_add(cb, "2026-10", ann, "asset", "House", "300000")
+
+    body = ca.get("/api/budget/2026-10").json()
+    assert [(x["name"], x["a"], x["b"], x["partner_id"]) for x in body["lines"]] == [
+        ("Pay", "4000.00", "3000.00", None),
+        ("Rent", "1000.00", "900.00", ann.id),
+        ("Holiday", "200.00", None, ann.id),
+    ]
+    assert body["summary"]["expenses"]["actual"] == "900.00"
+    assert body["summary"]["remainder"] == {"budgeted": "1800.00", "actual": "2100.00", "difference": "300.00"}
+    assert body["summary"]["assets"] == "0.00"
+    assert [x["a"] for x in cb.get("/api/budget/2026-10").json()["lines"]] == ["1000.00", "200.00"]
+
+
+def test_shared_lines_need_an_accepted_link(db, make_user, client_for):
+    ann, bob, cat = make_user(), make_user(), make_user()
+    link(db, ann, bob)
+    link(db, ann, cat, status="pending")
+    ca, cb = client_for(ann), client_for(bob)
+    assert shared_add(ca, "2026-10", cat, "expense", "Rent", "1").status_code == 404
+    assert shared_add(ca, "2026-10", ann, "expense", "Rent", "1").status_code == 404
+    line_id = shared_add(ca, "2026-10", bob, "expense", "Rent", "1000").json()["id"]
+    assert client_for(cat).patch(f"/api/budget/lines/{line_id}", json={"name": "x", "a": "1"}).status_code == 404
+
+    db.query(Link).filter_by(requester_id=ann.id, addressee_id=bob.id).delete()
+    db.flush()
+    assert cb.patch(f"/api/budget/lines/{line_id}", json={"name": "x", "a": "1"}).status_code == 404
+    assert cb.get("/api/budget/2026-10").json()["lines"] == []
+
+
+def test_shared_copy_previous(db, make_user, client_for):
+    ann, bob = make_user(), make_user()
+    link(db, ann, bob)
+    ca, cb = client_for(ann), client_for(bob)
+    shared_add(ca, "2026-09", bob, "expense", "Rent", "2000", "2000")
+    add(ca, "2026-09", "asset", "Car", "9000")
+
+    r = cb.post(f"/api/budget/2026-10/shared/{ann.id}/copy-previous")
+    assert r.status_code == 201
+    assert [(x["name"], x["a"], x["b"]) for x in r.json()["lines"]] == [("Rent", "2000.00", None)]
+    assert cb.post(f"/api/budget/2026-10/shared/{ann.id}/copy-previous").status_code == 409
+    assert cb.post(f"/api/budget/2026-12/shared/{ann.id}/copy-previous").status_code == 404
+    # personal copy leaves shared lines alone
+    assert [x["name"] for x in ca.post("/api/budget/2026-10/copy-previous").json()["lines"]] == ["Car", "Rent"]
