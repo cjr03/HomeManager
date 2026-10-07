@@ -16,7 +16,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   budget_level: 'moderate',
 }
 
-const DIETS = [
+export const DIETS = [
   ['none', 'No restrictions'],
   ['vegetarian', 'Vegetarian'],
   ['vegan', 'Vegan'],

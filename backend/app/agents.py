@@ -55,7 +55,7 @@ class ShoppingList(BaseModel):
 
 class GeneratedMeal(BaseModel):
     slot: Slot
-    name: NonEmpty
+    name: Annotated[NonEmpty, StringConstraints(max_length=200)]  # fits meal_entries.name
     servings: Annotated[int, Field(ge=1)]
     ingredients: list[GroceryItem]
     instructions: list[str]

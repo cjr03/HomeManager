@@ -97,6 +97,12 @@ def test_generated_meal_rejects_unknown_slot():
         GeneratedMeal(slot="brunch", name="x", servings=1, ingredients=[], instructions=[])
 
 
+def test_generated_meal_name_fits_a_meal_entry():
+    GeneratedMeal(slot="dinner", name="x" * 200, servings=1, ingredients=[], instructions=[])
+    with pytest.raises(ValidationError):
+        GeneratedMeal(slot="dinner", name="x" * 201, servings=1, ingredients=[], instructions=[])
+
+
 # --- request shape ---------------------------------------------------------
 
 
