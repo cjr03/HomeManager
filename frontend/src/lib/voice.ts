@@ -43,11 +43,13 @@ const NAME = /\b(?:Michaela|Micaela|Mikaela|Makayla|Mckayla|Mykayla|Michela|Mike
 export const spellMikayla = (text: string) => text.replace(NAME, 'Mikayla')
 
 // Her own voice is Kokoro, an open neural model that sounds like a person, run on the GPU in the browser: no account,
-// and what she says never leaves the machine. It starts loading on the first mic click; until it's ready, and
-// where there's no WebGPU, she uses the browser's voice above.
+// and what she says never leaves the machine. It starts loading on the first mic click; she waits a little for it
+// rather than switch voices, and uses the browser's voice above where there's no WebGPU or it takes too long.
 type Made = { audio?: Float32Array; sampling_rate?: number } // no audio: that sentence failed
 let worker: Worker | undefined
 let neural = false
+let loading: Promise<unknown> | undefined // settles once the model is ready or has failed
+let loaded = () => {}
 let audio: AudioContext | undefined
 let playing: AudioBufferSourceNode[] = []
 let said = 0 // bumped on every stop, so sentences still being made aren't played
@@ -66,6 +68,18 @@ const sentencesOf = (text: string) =>
     .flatMap((s) => (s.length > 300 ? s.split(/(?<=[,;:])\s+/) : [s]))
     .filter((s) => s.trim())
 
+/**
+ * Each clip comes with ~0.35s of silence before and ~0.45s after, so back to back she paused ~0.8s between
+ * sentences. Trimmed to 0.1s before and 0.25s after, the pause is about what a person leaves at a full stop.
+ */
+export function trimmed(clip: Float32Array, rate: number) {
+  const loud = (x: number) => Math.abs(x) > 0.01
+  const first = clip.findIndex(loud)
+  if (first < 0) return clip
+  const last = clip.findLastIndex(loud)
+  return clip.subarray(Math.max(0, first - 0.1 * rate), last + 1 + 0.25 * rate)
+}
+
 /** Stop her talking in either voice, including sentences not yet played. */
 export function stop() {
   said++
@@ -81,11 +95,18 @@ export function stop() {
 export function speak(text: string, done: () => void) {
   stop()
   const sentences = sentencesOf(text)
-  if (neural && audio) void speakNeural(sentences, audio, done)
-  else speakBrowser(sentences, done)
+  const turn = said
+  const go = () => {
+    if (turn !== said) return
+    if (neural && audio) void speakNeural(sentences, audio, done)
+    else speakBrowser(sentences, done)
+  }
+  if (loading) void Promise.race([loading, new Promise((resolve) => setTimeout(resolve, WAIT))]).then(go)
+  else go()
 }
 
-// Each sentence is made while the one before plays, and queued right after it.
+const WAIT = 8000 // loading from the browser's cache takes ~8s, from the mic click
+
 async function speakNeural(sentences: string[], ctx: AudioContext, done: () => void) {
   const turn = said
   let at = 0
@@ -98,8 +119,9 @@ async function speakNeural(sentences: string[], ctx: AudioContext, done: () => v
       const last = playing.at(-1)
       return last ? void (last.onended = rest) : rest()
     }
-    const buffer = ctx.createBuffer(1, out.audio.length, out.sampling_rate!)
-    buffer.copyToChannel(out.audio as Float32Array<ArrayBuffer>, 0)
+    const clip = trimmed(out.audio, out.sampling_rate!)
+    const buffer = ctx.createBuffer(1, clip.length, out.sampling_rate!)
+    buffer.copyToChannel(clip as Float32Array<ArrayBuffer>, 0)
     const source = ctx.createBufferSource()
     source.buffer = buffer
     source.connect(ctx.destination)
@@ -133,9 +155,17 @@ export function prime() {
     audio ??= new AudioContext()
     void audio.resume()
     if (!worker) {
+      loading = new Promise<void>((resolve) => (loaded = resolve))
       worker = new Worker(new URL('./kokoro.worker.ts', import.meta.url), { type: 'module' })
+      // Ready or not, once it says so (or the worker itself fails to load) she stops waiting for it.
+      const settle = (ready: boolean) => {
+        neural = ready
+        loading = undefined
+        loaded()
+      }
+      worker.onerror = () => settle(false)
       worker.onmessage = ({ data }) => {
-        if ('ready' in data) neural = data.ready
+        if ('ready' in data) settle(data.ready)
         else waiting.shift()?.(data)
       }
     }

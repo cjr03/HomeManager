@@ -172,6 +172,14 @@ def test_system_prompt_gives_the_mikayla_persona(auth_client, llm):
     assert client.calls[0]["system"].startswith("You are Mikayla")
 
 
+def test_a_spoken_message_gets_a_reply_written_to_be_heard(auth_client, llm):
+    client = llm(turn("ok"), turn("ok"))
+    auth_client.post("/api/assistant", json={"page": "meals", "today": TODAY, "spoken": True, "messages": [{"role": "user", "content": "Hi"}]})
+    ask(auth_client, "meals")
+    spoken, typed = (call["system"] for call in client.calls)
+    assert "read aloud" in spoken and "read aloud" not in typed
+
+
 # ---- meals ----
 
 def pantry(c):

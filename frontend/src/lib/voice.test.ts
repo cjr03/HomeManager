@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { pickVoice, prime, RATE, speak, spellMikayla } from '@/lib/voice'
+import { pickVoice, prime, RATE, speak, spellMikayla, trimmed } from '@/lib/voice'
 
 const voice = (name: string, lang = 'en-US') => ({ name, lang }) as SpeechSynthesisVoice
 
@@ -56,10 +56,28 @@ describe('speak', () => {
   })
 })
 
+describe('trimmed', () => {
+  it('keeps 0.1s before the first sound and 0.25s after the last, so sentences flow like speech', () => {
+    const rate = 1000
+    const clip = new Float32Array(2000)
+    clip.fill(0.5, 500, 1500) // 0.5s silence, 1s speech, 0.5s silence
+    const out = trimmed(clip, rate)
+    expect(out.length).toBe(100 + 1000 + 250)
+    expect(out[99]).toBe(0)
+    expect(out[100]).toBe(0.5)
+    expect(trimmed(clip.subarray(450, 1550), rate).length).toBe(50 + 1000 + 50) // never past the ends
+  })
+
+  it('leaves a silent clip alone', () => {
+    expect(trimmed(new Float32Array(10), 1000).length).toBe(10)
+  })
+})
+
 describe('her neural voice', () => {
   class FakeWorker {
     static last: FakeWorker
     onmessage: ((e: { data: unknown }) => void) | null = null
+    onerror: (() => void) | null = null
     posted: string[] = []
     constructor() {
       FakeWorker.last = this
@@ -89,7 +107,7 @@ describe('her neural voice', () => {
   const second = (seconds: number) => ({ audio: new Float32Array(24000 * seconds), sampling_rate: 24000 })
 
   // A fresh module each time: the worker and its readiness live for the page.
-  async function primed(ready = true) {
+  async function primed(ready: boolean | null = true) {
     vi.resetModules()
     sources.length = 0
     synth.speak.mockReset()
@@ -100,7 +118,7 @@ describe('her neural voice', () => {
     vi.stubGlobal('SpeechSynthesisUtterance', class { constructor(text: string) { Object.assign(this, { text }) } })
     const voice = await import('@/lib/voice')
     voice.prime()
-    FakeWorker.last.reply({ ready })
+    if (ready !== null) FakeWorker.last.reply({ ready })
     synth.speak.mockReset() // prime's silent iOS unlock
     return voice
   }
@@ -177,7 +195,37 @@ describe('her neural voice', () => {
     expect(Worker).not.toHaveBeenCalled()
   })
 
-  it('uses the browser voice until the model has loaded, or if it never does', async () => {
+  it('waits for her voice while it loads, rather than switching voices', async () => {
+    const { speak } = await primed(null)
+    speak('Hi.', () => {})
+    await flush()
+    expect(FakeWorker.last.posted).toEqual([])
+    expect(said()).toEqual([])
+    FakeWorker.last.reply({ ready: true })
+    await flush()
+    expect(FakeWorker.last.posted).toEqual(['Hi.'])
+    expect(said()).toEqual([])
+  })
+
+  it('uses the browser voice if hers takes too long to load', async () => {
+    const { speak } = await primed(null)
+    vi.useFakeTimers()
+    speak('Hi.', () => {})
+    await vi.advanceTimersByTimeAsync(7999)
+    expect(said()).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(said()).toEqual(['Hi.'])
+    vi.useRealTimers()
+  })
+
+  it('stops waiting at once if the worker itself fails to load', async () => {
+    const { speak } = await primed(null)
+    FakeWorker.last.onerror!()
+    speak('Hi.', () => {})
+    expect(said()).toEqual(['Hi.'])
+  })
+
+  it('uses the browser voice if the model fails to load', async () => {
     const { speak } = await primed(false)
     speak('Hi.', () => {})
     expect(said()).toEqual(['Hi.'])

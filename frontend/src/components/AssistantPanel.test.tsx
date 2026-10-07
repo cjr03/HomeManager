@@ -47,11 +47,12 @@ describe('AssistantPanel', () => {
     await userEvent.type(await box(), 'Line one{Shift>}{Enter}{/Shift}two{Enter}')
     expect(await within(panel).findByText('Sure.')).toBeInTheDocument()
     expect(sent).toEqual([
-      { page: 'calendar', today: '2026-03-10', context: { month: '2026-03' }, messages: [{ role: 'user', content: 'What is on?' }] },
+      { page: 'calendar', today: '2026-03-10', context: { month: '2026-03' }, spoken: false, messages: [{ role: 'user', content: 'What is on?' }] },
       {
         page: 'calendar',
         today: '2026-03-10',
         context: { month: '2026-03' },
+        spoken: false,
         messages: [
           { role: 'user', content: 'What is on?' },
           { role: 'assistant', content: 'Nothing is planned.' },
@@ -173,7 +174,7 @@ describe('AssistantPanel', () => {
       expect(screen.getByRole('button', { name: 'Talk to Mikayla' })).toHaveAttribute('aria-pressed', 'true')
       FakeRecognition.last.hear('When are bins due')
       expect(await screen.findByText('Bins are due Tuesday. Want a reminder?')).toBeInTheDocument()
-      expect(sent).toEqual([expect.objectContaining({ messages: [{ role: 'user', content: 'When are bins due' }] })])
+      expect(sent).toEqual([expect.objectContaining({ spoken: true, messages: [{ role: 'user', content: 'When are bins due' }] })])
       expect(said()).toBe('Bins are due Tuesday. Want a reminder?')
       expect(screen.getByRole('button', { name: 'Talk to Mikayla' })).toHaveAttribute('aria-pressed', 'false')
       expect(await box()).toHaveValue('')
