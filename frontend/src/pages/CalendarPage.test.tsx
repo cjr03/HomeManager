@@ -22,8 +22,8 @@ const MONTH = {
     { id: 2, owner_id: 5, title: 'Party', date: '2026-03-14', start_time: null, notes: 'Bring cake', shared: true, done: true },
   ],
   tasks: [
-    { id: 11, owner_id: USER.id, title: 'Pay rent', date: '2026-03-10', notes: 'Online', shared: false, done: false },
-    { id: 12, owner_id: 5, title: 'Book vet', date: '2026-03-11', notes: '', shared: true, done: true },
+    { id: 11, owner_id: USER.id, title: 'Pay rent', date: '2026-03-10', start_time: '17:00:00', notes: 'Online', shared: false, done: false },
+    { id: 12, owner_id: 5, title: 'Book vet', date: '2026-03-11', start_time: null, notes: '', shared: true, done: true },
   ],
   chores: [
     occ(3, 'Bins', '2026-03-10', true),
@@ -68,6 +68,7 @@ describe('CalendarPage', () => {
     expect(within(tenth).getByText('Bins').closest('li')).toHaveTextContent('Bins, done')
     expect(within(tenth).getByText('Bins').closest('li')!.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,eve')
     expect(within(tenth).getByText('Pay rent').closest('li')).not.toHaveTextContent('done')
+    expect(within(tenth).getByText('Pay rent').closest('li')).toHaveTextContent('17:00')
     expect(within(await day('Wednesday, March 11')).getByText('Book vet').closest('li')).toHaveTextContent('Book vet, done')
 
     const fourteenth = await day('Saturday, March 14')
@@ -96,6 +97,7 @@ describe('CalendarPage', () => {
     const rent = within(dialog).getByRole('checkbox', { name: 'Pay rent' })
     expect(rent).not.toBeChecked()
     expect(within(dialog).getByText('Online')).toBeInTheDocument()
+    expect(rent.closest('li')).toHaveTextContent('17:00')
     await userEvent.click(rent)
     expect(api).toHaveBeenCalledWith('/api/tasks/11/done', { method: 'POST' })
     expect(rent).toBeChecked()
@@ -127,14 +129,14 @@ describe('CalendarPage', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('No tasks.')).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add task' }))
-    expect(within(dialog).queryByLabelText('Time')).not.toBeInTheDocument()
     expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-03-12')
     await userEvent.type(within(dialog).getByLabelText('Title'), ' Renew passport ')
+    await userEvent.type(within(dialog).getByLabelText('Time'), '08:00')
     await userEvent.click(within(dialog).getByRole('checkbox', { name: 'Share with linked accounts' }))
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save task' }))
     expect(api).toHaveBeenCalledWith('/api/tasks', {
       method: 'POST',
-      json: { title: 'Renew passport', date: '2026-03-12', notes: '', shared: true },
+      json: { title: 'Renew passport', date: '2026-03-12', start_time: '08:00', notes: '', shared: true },
     })
   })
 
@@ -144,12 +146,14 @@ describe('CalendarPage', () => {
     const dialog = screen.getByRole('dialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Edit Pay rent' }))
     expect(within(dialog).getByLabelText('Notes')).toHaveValue('Online')
+    expect(within(dialog).getByLabelText('Time')).toHaveValue('17:00')
+    await userEvent.clear(within(dialog).getByLabelText('Time'))
     await userEvent.clear(within(dialog).getByLabelText('Date'))
     await userEvent.type(within(dialog).getByLabelText('Date'), '2026-03-20')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save task' }))
     expect(api).toHaveBeenCalledWith('/api/tasks/11', {
       method: 'PUT',
-      json: { title: 'Pay rent', date: '2026-03-20', notes: 'Online', shared: false },
+      json: { title: 'Pay rent', date: '2026-03-20', start_time: null, notes: 'Online', shared: false },
     })
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete Pay rent' }))
     expect(api).toHaveBeenCalledWith('/api/tasks/11', { method: 'DELETE' })
@@ -179,7 +183,7 @@ describe('CalendarPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save task' }))
     expect(api).toHaveBeenCalledWith('/api/tasks', {
       method: 'POST',
-      json: { title: 'Pack', date: '2026-04-01', notes: '', shared: false },
+      json: { title: 'Pack', date: '2026-04-01', start_time: null, notes: '', shared: false },
     })
   })
 

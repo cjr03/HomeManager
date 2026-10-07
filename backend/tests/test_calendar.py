@@ -450,11 +450,11 @@ def test_shared_chore_visible_to_linked_accounts_only(pair, make_user, client_fo
 # ---- tasks ----
 
 def test_task_crud(auth_client):
-    r = task(auth_client, notes="Online")
+    r = task(auth_client, notes="Online", start_time="17:00")
     assert r.status_code == 201
     t = r.json()
     assert t | {"id": 0} == {
-        "id": 0, "owner_id": auth_client.user.id, "title": "Pay rent", "date": "2026-03-10",
+        "id": 0, "owner_id": auth_client.user.id, "title": "Pay rent", "date": "2026-03-10", "start_time": "17:00:00",
         "notes": "Online", "shared": False, "done": False,
     }
     assert auth_client.get("/api/calendar/2026-03").json()["tasks"] == [t]
@@ -462,8 +462,8 @@ def test_task_crud(auth_client):
     r = auth_client.put(f"/api/tasks/{t['id']}", json={"title": "Pay bills", "date": "2026-04-01"})
     assert r.status_code == 200
     assert r.json() | {"id": 0} == {
-        "id": 0, "owner_id": auth_client.user.id, "title": "Pay bills", "date": "2026-04-01",
-        "notes": "", "shared": False, "done": True,  # editing keeps it done
+        "id": 0, "owner_id": auth_client.user.id, "title": "Pay bills", "date": "2026-04-01", "start_time": None,
+        "notes": "", "shared": False, "done": True,  # editing keeps it done; leaving out the time clears it
     }
     assert auth_client.get("/api/calendar/2026-03").json()["tasks"] == []
     assert [x["title"] for x in auth_client.get("/api/calendar/2026-04").json()["tasks"]] == ["Pay bills"]
@@ -475,6 +475,7 @@ def test_task_validation(auth_client):
     assert task(auth_client, title="").status_code == 422
     assert task(auth_client, title="x" * 201).status_code == 422
     assert task(auth_client, date="2026-02-30").status_code == 422
+    assert task(auth_client, start_time="25:00").status_code == 422
     assert auth_client.post("/api/tasks", json={"title": "No date"}).status_code == 422
 
 
@@ -492,10 +493,13 @@ def test_task_done_toggle_is_idempotent(auth_client):
         assert done() is False
 
 
-def test_tasks_sorted_by_date_then_creation(auth_client):
-    for title, day in [("b", "2026-03-05"), ("c", "2026-03-05"), ("a", "2026-03-01")]:
-        task(auth_client, title=title, date=day)
-    assert [t["title"] for t in auth_client.get("/api/calendar/2026-03").json()["tasks"]] == ["a", "b", "c"]
+def test_tasks_sorted_like_events(auth_client):
+    task(auth_client, title="b", date="2026-03-05", start_time="12:00")
+    task(auth_client, title="c", date="2026-03-05")
+    task(auth_client, title="a", date="2026-03-05", start_time="08:00")
+    task(auth_client, title="d", date="2026-03-05")
+    task(auth_client, title="z", date="2026-03-01", start_time="23:00")
+    assert [t["title"] for t in auth_client.get("/api/calendar/2026-03").json()["tasks"]] == ["z", "c", "d", "a", "b"]
 
 
 def test_shared_tasks_visible_only_through_accepted_link(make_user, client_for, db):

@@ -35,6 +35,7 @@ class Task(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     date: Mapped[dt.date]
+    start_time: Mapped[dt.time | None]
     notes: Mapped[str] = mapped_column(Text, default="")
     shared: Mapped[bool] = mapped_column(default=False)
     done: Mapped[bool] = mapped_column(default=False)
@@ -115,6 +116,7 @@ class EventOut(EventIn):
 class TaskIn(BaseModel):
     title: Title
     date: dt.date
+    start_time: dt.time | None = None
     notes: str = ""
     shared: bool = False
 
@@ -262,7 +264,7 @@ def month_view(month: Month, user: CurrentUser, db: DB):
     tasks = db.scalars(
         select(Task)
         .where(Task.date.between(start, end), or_(Task.owner_id == user.id, and_(Task.shared, Task.owner_id.in_(linked))))
-        .order_by(Task.date, Task.id)
+        .order_by(Task.date, Task.start_time.nulls_first(), Task.id)
     )
     chores = _chores_of(db, user)
     people = list({c.assignee_id: c.assignee for c in chores}.values())
