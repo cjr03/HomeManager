@@ -51,8 +51,8 @@ describe('BudgetPage', () => {
     expect(o.getByText('$12,345.67')).toBeInTheDocument()
     expect(o.getByText('$5,000.00')).toBeInTheDocument()
     expect(within(screen.getByRole('list', { name: 'Legend' })).getByText('Needs attention')).toBeInTheDocument()
-    for (const name of ['What you own', 'What you owe', "This month's plan"])
-      expect(screen.getByRole('heading', { name })).toBeInTheDocument()
+    const sections = ["This month's plan", 'What you own', 'What you owe']
+    expect(screen.getAllByRole('heading').map((h) => h.textContent).filter((t) => sections.includes(t!))).toEqual(sections)
     expect(screen.getByRole('listitem', { name: 'Rent' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Copy last month' })).not.toBeInTheDocument()
   })
