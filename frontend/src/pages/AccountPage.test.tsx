@@ -114,7 +114,7 @@ describe('AccountPage', () => {
     })
     renderAt('/account')
     expect(await screen.findByRole('checkbox', { name: 'Bins' })).not.toBeChecked()
-    await userEvent.type(screen.getByRole('textbox', { name: 'Message the assistant' }), 'We are 4 now and bins are done{Enter}')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Message Mikayla' }), 'We are 4 now and bins are done{Enter}')
     expect(await screen.findByText('Done.')).toBeInTheDocument()
     expect(await screen.findByRole('checkbox', { name: 'Bins', checked: true })).toBeInTheDocument()
     expect(await screen.findByDisplayValue('4')).toBe(screen.getByLabelText('People in your household'))

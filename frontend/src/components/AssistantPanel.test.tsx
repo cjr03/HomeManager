@@ -21,7 +21,7 @@ function setup(assistant: (init: { json: unknown }) => unknown, path = '/calenda
   renderAt(path)
 }
 
-const box = () => screen.findByRole('textbox', { name: 'Message the assistant' })
+const box = () => screen.findByRole('textbox', { name: 'Message Mikayla' })
 
 describe('AssistantPanel', () => {
   beforeEach(() => {
@@ -38,7 +38,7 @@ describe('AssistantPanel', () => {
       sent.push(structuredClone(json))
       return { reply: replies[sent.length - 1], changed: false }
     })
-    const panel = await screen.findByRole('complementary', { name: 'Assistant' })
+    const panel = await screen.findByRole('complementary', { name: 'Mikayla' })
     await userEvent.type(await box(), 'What is on?{Enter}')
     expect(await within(panel).findByText('Nothing is planned.')).toBeInTheDocument()
     expect(within(panel).getByText('What is on?')).toBeInTheDocument()
@@ -63,10 +63,10 @@ describe('AssistantPanel', () => {
 
   it('shows an error inline and gives the message back to retry', async () => {
     setup(() => {
-      throw new ApiError(502, 'The assistant is unavailable right now')
+      throw new ApiError(502, 'Mikayla is unavailable right now')
     })
     await userEvent.type(await box(), 'Hello{Enter}')
-    expect(await screen.findByRole('alert')).toHaveTextContent('The assistant is unavailable right now')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Mikayla is unavailable right now')
     expect(await box()).toHaveValue('Hello')
   })
 
@@ -111,14 +111,14 @@ describe('AssistantPanel', () => {
     setup(() => new Promise((_, r) => (fail = r)))
     await userEvent.type(await box(), 'First{Enter}')
     await userEvent.type(await box(), 'Second')
-    fail(new ApiError(502, 'The assistant is unavailable right now'))
+    fail(new ApiError(502, 'Mikayla is unavailable right now'))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(await box()).toHaveValue('Second')
   })
 
   it('moves focus into the sheet when opened, and Escape closes it and returns focus', async () => {
     setup(() => ({ reply: 'ok', changed: false }))
-    const trigger = await screen.findByRole('button', { name: 'Open assistant' })
+    const trigger = await screen.findByRole('button', { name: 'Open Mikayla' })
     await userEvent.click(trigger)
     expect(await box()).toHaveFocus()
     await userEvent.click(document.body)

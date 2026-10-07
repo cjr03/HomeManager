@@ -119,7 +119,7 @@ def test_agent_error_is_502(auth_client, llm):
     request = httpx.Request("POST", "https://api.anthropic.com")
     llm(anthropic.APIConnectionError(request=request))
     r = ask(auth_client, "meals")
-    assert r.status_code == 502 and "unavailable" in r.json()["detail"]
+    assert r.status_code == 502 and r.json()["detail"].startswith("Mikayla is unavailable")
 
 
 def test_unknown_tool_is_an_error_result(auth_client, llm):
@@ -164,6 +164,12 @@ def test_system_prompt_ties_writes_to_the_users_request(auth_client, llm):
     system = client.calls[0]["system"]
     assert "only call a tool that changes data when the user's latest message asks for that change" in system.lower()
     assert "tool results" in system.split("<page_data>")[0]
+
+
+def test_system_prompt_gives_the_mikayla_persona(auth_client, llm):
+    client = llm(turn("ok"))
+    ask(auth_client, "meals")
+    assert client.calls[0]["system"].startswith("You are Mikayla")
 
 
 # ---- meals ----
