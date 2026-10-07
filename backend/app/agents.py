@@ -215,7 +215,7 @@ def generate_meals(
 ) -> WeekMeals:
     data = {
         "household_size": household_size,
-        "slots": [Slot(s).value for s in slots],
+        "slots": list(slots),
         "preferences": preferences.model_dump(mode="json"),
         "have": _dump(have),
     }
@@ -224,7 +224,7 @@ def generate_meals(
 
 def get_client():
     if os.environ.get("LLM_FAKE") == "1":
-        return _FakeClient()
+        return SimpleNamespace(messages=SimpleNamespace(parse=_fake_parse))
     return anthropic.Anthropic()
 
 
@@ -329,11 +329,7 @@ def _fake_meals(data: dict) -> WeekMeals:
 _FAKES = {GroceryList: _fake_groceries, ShoppingList: _fake_shopping, WeekMeals: _fake_meals}
 
 
-class _FakeClient:
-    def __init__(self):
-        self.messages = SimpleNamespace(parse=self._parse)
-
-    def _parse(self, *, messages, output_format, **_):
-        content = messages[0]["content"]
-        data = json.loads(content.removeprefix("<input_json>\n").removesuffix("\n</input_json>"))
-        return SimpleNamespace(parsed_output=_FAKES[output_format](data), stop_reason="end_turn")
+def _fake_parse(*, messages, output_format, **_):
+    content = messages[0]["content"]
+    data = json.loads(content.removeprefix("<input_json>\n").removesuffix("\n</input_json>"))
+    return SimpleNamespace(parsed_output=_FAKES[output_format](data), stop_reason="end_turn")
